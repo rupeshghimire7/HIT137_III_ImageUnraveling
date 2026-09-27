@@ -1,62 +1,131 @@
-# ImageUnraveling - HIT137 Assignment Project III
+# Tile Rotation Puzzle - HIT137 Assignment 3
 
+A desktop puzzle game built with **Tkinter** (GUI) and **OpenCV** (image
+processing), structured into a layered architecture. A loaded image is
+cut into a grid of tiles, scrambled with random swaps/rotations/flips,
+and the player restores it by clicking tiles.
 
-- **Course:** HIT137 — Group Assignment 3
+See **`ARCHITECTURE.md`** for the layer diagram and **`TASK_DIVISION.md`**
+for who owns which part of the code.
 
-- **Product:** Desktop image-restoration puzzle (Python, Tkinter, OpenCV)
+## Setup
 
-- **Team:** 4 members
+```bash
+pip install -r requirements.txt
+python src/main.py
+```
 
-- Member 1: John Karki
-- Member 2: Hemanta Adhikari
-- Member 3: Ashim Koirala
-- Member 4: Rupesh Ghimire (s403354)
+Run from the project root exactly as above. Tested with Python 3.10+.
+`tkinter` ships with most Python installers; on some Linux distributions
+you may need `sudo apt install python3-tk`.
 
-## Overview
-A desktop game where the player loads a picture, the app cuts it into a grid of tiles and scrambles them (moving, rotating and flipping pieces), and the player clicks tiles to restore the original picture. The app counts moves, shows how many tiles are still wrong, offers limited hints, can auto-solve, and announces when the picture is restored.
+## How to play
 
+1. Pick a grid size (3x3, 4x4 or 5x5) from the dropdown, then click
+   **Load Image...** and choose a JPG/PNG/BMP file.
+2. The left canvas shows the original picture (reference only). The right
+   canvas shows the scrambled version - only it responds to clicks.
+3. **Left click** a tile to select it (blue border). Left click a second
+   tile to swap them. Left click the same tile again to deselect it.
+4. **Right click** a tile to rotate it 90° clockwise.
+5. **Shift + left click** a tile to flip it horizontally.
+6. A green tick appears in the corner of any tile that is already in its
+   correct place and orientation.
+7. **Hint** (max 3 per image) circles one wrong tile on the puzzle image
+   in blue, and circles that tile's correct home cell on the original
+   image in blue. The circles disappear as soon as you make your next
+   move.
+8. **Solve** instantly restores the picture and resets the move/hint
+   counters for that image.
+9. When every tile is correct you get a completion message and the
+   puzzle stops responding to clicks until you load a new image.
 
-## Core User Flow
+## Project structure
 
-1. Player chooses a grid size (3×3 default, 4×4 or 5×5).
-2. Player clicks **Load Image** and picks a JPG, PNG or BMP file.
-3. App resizes the image to fit the screen, crops or pads it so the grid divides evenly, and cuts it into tiles.
-4. App generates a random batch of transformations (swap, rotate, flip) all at once and applies them.
-5. Window shows the **original** image on the left (reference only) and the **scrambled** image on the right (interactive), with a faint grid over the scrambled image.
-6. Player restores tiles:
-   - Left click selects a tile (coloured border). Left click another tile swaps them. Left click the same tile deselects it.
-   - Right click rotates a tile 90° clockwise.
-   - Shift + left click flips a tile horizontally.
-7. After every action the image is re-rendered, a green tick appears on every correct tile, and the move counter and "tiles incorrect" counter update.
-8. Player may press **Hint** (max 3 per image) or **Solve**.
-9. When all tiles are correct, the player is notified and the puzzle stops accepting input. The player can load another image.
+```
+tile_puzzle_game/
+├── README.md
+├── ARCHITECTURE.md        <- layer diagram + data-flow walkthrough
+├── TASK_DIVISION.md       <- who owns which package
+├── requirements.txt
+├── github_link.txt        <- put your group's repo URL here before submitting
+├── outputs/               <- sample original/scrambled images (proof the pipeline works)
+├── src/
+│   ├── main.py            <- entry point
+│   ├── models/            <- Tile + Transformation hierarchy (pure OOP core)
+│   │   ├── tile.py
+│   │   └── transformations.py
+│   ├── engine/            <- game rules + OpenCV image pipeline
+│   │   ├── image_processor.py
+│   │   └── puzzle_board.py
+│   └── ui/                <- Tkinter front-end
+│       └── gui.py
+└── tests/
+    └── verify_model.py    <- headless self-check, no display needed
+```
 
+## Verifying the game logic without opening the GUI
 
-## Constraints
+```bash
+python tests/verify_model.py path/to/any_image.jpg
+```
 
-- GUI: **Tkinter**. Image processing: **OpenCV**. Language: Python.
-- Formats: **JPG, PNG, BMP** must work.
-- Grid sizes: exactly **3×3, 4×4, 5×5**, default **3×3**, selectable **before loading**.
-- Transformations: minimum **Swap, Rotate (90/180/270), Flip (H or V)**; random each load; generated at once; count scales with grid size; **no tile targeted twice**.
+This scrambles, plays random moves, and solves the puzzle at all three
+grid sizes, asserting the model always ends up back in a fully solved
+state, and re-saves the sample images in `outputs/`.
 
+## How the OOP requirements are met
 
+**Encapsulation** - `Tile` keeps its pixel data and rotation/flip flags as
+private attributes; they can only be changed through its methods
+(`rotate`, `flip_horizontal`, `flip_vertical`, `reset`), never poked at
+directly from the GUI.
 
-## Project Timeline and Progress:
+**Constructors** - every class (`Tile`, the `Transformation` subclasses,
+`ImageProcessor`, `PuzzleBoard`, `PuzzleGameApp`) has an `__init__` that
+sets up its own state.
 
-- Github Repo Initialized
-- Project Documents downloaded 
-- Initial PRD and Implementation plan with task division created and shared to GroupMembers after multiple iterations (Rupesh) 
-- Readme file created
+**Inheritance** - `src/models/transformations.py` defines an abstract
+base class `Transformation`, an abstract `TileTransformation` subclass
+(single-tile actions), and concrete leaves `RotateTransformation` and
+`FlipTransformation`; `SwapTransformation` inherits directly from
+`Transformation`.
 
+**Polymorphism** - `PuzzleBoard` keeps one `history` list mixing all
+three transformation types. Scrambling, playing moves and solving all
+just call `.apply()` / `.undo()` on whatever is in that list - the
+correct behaviour happens automatically per subclass, with no
+`isinstance` checks anywhere in the model.
 
-*Note: A team discussion is to be held to discuss implementation and hereon after, all members shall use their own feature branches and create pull requests*
+**Class interaction / layering** - `ui/gui.py` never touches OpenCV or
+pixel arrays directly: it calls `engine/puzzle_board.py` methods, which
+in turn call `engine/image_processor.py` (for pixels) and
+`models/transformations.py` (for game moves). See `ARCHITECTURE.md`.
 
-- 
+## Design notes
 
+- Every loaded image is resized (aspect ratio preserved) into a 480x480
+  box and then centre-cropped to a square whose side divides evenly by
+  the grid size - square tiles are what make a 90°/180°/270° rotation
+  always fit back into its slot.
+- Scramble count is `grid_size * (grid_size - 1)` (6/12/20 for 3x3/4x4/5x5),
+  matching the brief's example, guaranteeing all three transformation
+  types appear and the result isn't trivially already solved.
+- `Solve` pops every transformation ever applied (scramble *and* player
+  moves) off a history stack and calls `.undo()` on each, in reverse
+  order - a literal "undo everything", exactly as the brief describes.
+- All file/image errors (cancelled dialog, non-image file, corrupt file)
+  are caught and shown in a message box instead of crashing the app;
+  clicks outside the puzzle image are silently ignored.
 
-## Members:
+## Before you submit
 
-Member 1: John Karki
-Member 2: Hemanta Adhikari
-Member 3: Ashim Koirala
-Member 4: Rupesh Ghimire
+1. Read `TASK_DIVISION.md`, split up ownership as described, and make
+   sure every team member actually understands their section (and ideally
+   the whole app) - you may be asked about any part of it.
+2. Create a **public** GitHub repository and add all group members.
+3. Push this code and keep committing there as you go (see the GitHub
+   workflow section in `TASK_DIVISION.md`).
+4. Put the repository URL in `github_link.txt`.
+5. Zip the programming files, the `outputs/` folder and `github_link.txt`
+   together and upload to Learnline.
