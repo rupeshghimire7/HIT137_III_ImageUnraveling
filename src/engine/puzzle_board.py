@@ -85,6 +85,49 @@ class PuzzleBoard:
         self.history.append(t)
         self.moves += 1
 
+    # Solve / hints
+    def solve(self):
+        """Instantly restore the picture by undoing every transformation
+        ever applied to this board (scramble AND player moves) in reverse
+        order, then clear the moves/hints counters for this image."""
+        while self.history:
+            transformation = self.history.pop()
+            transformation.undo()
+        self.moves = 0
+        self.hints_used = 0
+
+    def use_hint(self):
+        """Returns (tile_index, home_row, home_col) describing one
+        currently-incorrect tile, or None if no hints remain or the
+        puzzle is already solved."""
+        if self.hints_used >= self.max_hints:
+            return None
+
+        incorrect = self.incorrect_indices()
+        if not incorrect:
+            return None
+
+        self.hints_used += 1
+        index = incorrect[0]
+        tile = self.tiles[index]
+        return index, tile.home_row, tile.home_col
+
+    @property
+    def hints_remaining(self):
+        return self.max_hints - self.hints_used
+
+    # Queries
+    def incorrect_indices(self):
+        result = []
+        for index, tile in enumerate(self.tiles):
+            row, col = divmod(index, self.grid_size)
+            if not tile.is_correct(row, col):
+                result.append(index)
+        return result
+
+    def is_solved(self):
+        return len(self.incorrect_indices()) == 0
+
     def render(self):
         """Return the current (possibly still-scrambled) image as a
         displayable numpy array, tiles reassembled in their current
