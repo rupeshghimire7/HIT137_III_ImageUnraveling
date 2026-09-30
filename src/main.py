@@ -14,7 +14,8 @@ import tkinter as tk
 from ui.gui import PuzzleGameApp
 
 
-def main():
+def main() -> None:
+    """Open the game window and run until it is closed."""
     root = tk.Tk()
     PuzzleGameApp(root)
     root.mainloop()

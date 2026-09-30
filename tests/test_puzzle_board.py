@@ -3,9 +3,15 @@ hints, solving and completion."""
 
 import random
 
+import numpy as np
 import pytest
 
+from engine.fit_strategy import PAD
+from engine.hints import RandomHint
+from engine.image_processor import ImageProcessor
+from engine.par_solver import ParSolver
 from engine.puzzle_board import MAX_HINTS, PuzzleBoard
+from models.tile import Tile
 from models.transformations import (
     FlipTransformation,
     RotateTransformation,
@@ -166,3 +172,67 @@ def test_non_image_rejected(tmp_path):
     path.write_text("hello")
     with pytest.raises(ValueError):
         PuzzleBoard(str(path), 3)
+
+
+def test_winning_by_hand_finishes_the_round_with_a_score(image_path):
+    board = PuzzleBoard(image_path, 3, seed=11, clock=lambda: 0.0)
+    par = board.state.par
+    assert par == ParSolver().par_moves(board.tiles) > 0
+    solve_like_a_player(board)
+    state = board.state
+    assert state.is_finished and not state.was_auto_solved
+    assert state.moves >= par
+    assert state.score() > 0 and 1 <= state.stars() <= 3
+
+
+def test_solve_ends_round_as_auto_solved_and_keeps_hint_budget(image_path):
+    board = PuzzleBoard(image_path, 3, seed=2)
+    board.use_hint()
+    board.rotate_tile(0)
+    board.solve()
+    assert board.state.was_auto_solved
+    assert (board.moves, board.state.score()) == (0, 0)
+    assert board.hints_remaining == MAX_HINTS - 1  # only a new image refills hints
+    assert board.use_hint() is None
+    board.solve()  # solving again changes nothing
+    assert board.is_solved()
+
+
+def test_hint_strategy_can_be_swapped(image_path):
+    board = PuzzleBoard(image_path, 4, seed=4, hint_strategy=RandomHint(random.Random(0)))
+    picks = set()
+    for seed in range(30):
+        other = PuzzleBoard(image_path, 4, seed=4, hint_strategy=RandomHint(random.Random(seed)))
+        picks.add(other.use_hint()[0])
+    assert picks <= set(board.incorrect_indices())
+    assert len(picks) > 1
+
+
+def test_pad_fit_mode_is_passed_through(image_path):
+    # The fixture image is 150x200: cropping gives 360 px, padding the full 480.
+    assert PuzzleBoard(image_path, 3).reference_image.shape[0] == 360
+    assert PuzzleBoard(image_path, 3, fit_mode=PAD).reference_image.shape[0] == 480
+
+
+def test_non_square_tiles_rejected(image_path, monkeypatch):
+    def lopsided_square(image, grid_size, **kwargs):
+        return np.zeros((90, 120, 3), dtype=np.uint8)
+
+    def lopsided_split(image, grid_size):
+        tiles = [
+            Tile(image[:30, :40].copy(), i // grid_size, i % grid_size, tile_id=i)
+            for i in range(grid_size ** 2)
+        ]
+        return tiles, 30
+
+    monkeypatch.setattr(ImageProcessor, "prepare_square", staticmethod(lopsided_square))
+    monkeypatch.setattr(ImageProcessor, "split_into_tiles", staticmethod(lopsided_split))
+    with pytest.raises(ValueError, match="square"):
+        PuzzleBoard(image_path, 3)
+
+
+def test_board_state_is_read_only(image_path):
+    board = PuzzleBoard(image_path, 3, seed=0)
+    for name in ("tiles", "history", "moves", "grid_size", "state", "hints_remaining"):
+        with pytest.raises(AttributeError):
+            setattr(board, name, None)

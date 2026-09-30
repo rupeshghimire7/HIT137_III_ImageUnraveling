@@ -12,10 +12,36 @@ GUI never need to import cv2 directly - a clean separation of concerns /
 (PuzzleBoard) and the presentation layer (gui.py).
 """
 
+import os
+from enum import Enum
+
 import cv2
 import numpy as np
 
+from engine.fit_strategy import DEFAULT_FIT_MODE, FIT_STRATEGIES
 from models.tile import Tile
+
+
+class LoadFailure(Enum):
+    """Why an image file could not be loaded."""
+
+    NOT_FOUND = "not found"
+    UNSUPPORTED_FORMAT = "unsupported format"
+    UNREADABLE = "unreadable"
+    TOO_SMALL = "too small"
+
+
+class ImageLoadError(ValueError):
+    """Raised when a file cannot be used as a puzzle image.
+
+    `reason` says what went wrong; the message (str(error)) is always
+    safe to show the player in a message box. It is a ValueError, so
+    callers that only care that "the input was bad" can catch that.
+    """
+
+    def __init__(self, reason: LoadFailure, message: str) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class ImageProcessor:
@@ -28,8 +54,14 @@ class ImageProcessor:
     #: for every supported grid.
     DISPLAY_SIZE = 480
 
+    #: file extensions the game accepts (compared case-insensitively).
+    ALLOWED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".bmp")
+
+    #: smallest usable source image, in pixels on its shorter side.
+    MIN_SIDE = 16
+
     @staticmethod
-    def load_image(path):
+    def load_image(path: str) -> np.ndarray:
         """Read an image file from disk and return it as 8-bit, 3-channel
         RGB.
 
@@ -39,30 +71,52 @@ class ImageProcessor:
         PNGs are placed on a white background, and 16-bit images are
         scaled down to 8-bit.
 
-        Raises ValueError with a message that is safe to show the user if
-        the file is missing or cannot be decoded as an image (for example
-        the user picked a .txt or .docx file by mistake).
+        Raises ImageLoadError (a ValueError) with a message that is safe
+        to show the user if the file is missing, is not a JPG/PNG/BMP,
+        cannot be decoded as an image, or is smaller than MIN_SIDE pixels.
         """
+        name = os.path.basename(path)
+        if not os.path.isfile(path):
+            raise ImageLoadError(
+                LoadFailure.NOT_FOUND,
+                f"{name} could not be found.\n"
+                "Please check it still exists and try again.",
+            )
+        if os.path.splitext(path)[1].lower() not in ImageProcessor.ALLOWED_EXTENSIONS:
+            raise ImageLoadError(
+                LoadFailure.UNSUPPORTED_FORMAT,
+                f"{name} is not a supported image.\n"
+                "Please choose a JPG, PNG or BMP file.",
+            )
+
+        unreadable = ImageLoadError(
+            LoadFailure.UNREADABLE,
+            f"{name} could not be read as an image - it may be corrupted.\n"
+            "Please choose another JPG, PNG or BMP file.",
+        )
         try:
             data = np.fromfile(path, dtype=np.uint8)
         except OSError:
-            raise ValueError(
-                "That file could not be opened.\n"
-                "Please check it still exists and try again."
-            ) from None
+            raise unreadable from None
 
         image = None
         if data.size > 0:
             image = cv2.imdecode(data, cv2.IMREAD_UNCHANGED)
         if image is None:
-            raise ValueError(
-                "Could not read that file as an image.\n"
-                "Please choose a JPG, PNG or BMP file."
+            raise unreadable
+
+        image = ImageProcessor._to_rgb(image)
+        if min(image.shape[:2]) < ImageProcessor.MIN_SIDE:
+            raise ImageLoadError(
+                LoadFailure.TOO_SMALL,
+                f"{name} is too small to make a puzzle from.\n"
+                f"Please choose an image at least {ImageProcessor.MIN_SIDE} pixels "
+                "wide and tall.",
             )
-        return ImageProcessor._to_rgb(image)
+        return image
 
     @staticmethod
-    def _to_rgb(image):
+    def _to_rgb(image: np.ndarray) -> np.ndarray:
         """Normalise any decoded OpenCV image to 8-bit, 3-channel RGB."""
         if image.dtype == np.uint16:
             image = (image // 257).astype(np.uint8)
@@ -82,12 +136,28 @@ class ImageProcessor:
         return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     @staticmethod
-    def prepare_square(image, grid_size, target_size=DISPLAY_SIZE):
+    def prepare_square(
+        image: np.ndarray,
+        grid_size: int,
+        target_size: int = DISPLAY_SIZE,
+        fit_mode: str = DEFAULT_FIT_MODE,
+    ) -> np.ndarray:
         """Resize `image` (preserving aspect ratio) so it fits inside a
-        target_size x target_size box, then centre-crop it to a square
-        whose side is an exact multiple of `grid_size`, so it can be cut
-        into equal, square tiles (square tiles are what make rotating a
-        tile 90 degrees fit back into its slot correctly)."""
+        target_size x target_size box, then make it a square whose side is
+        an exact multiple of `grid_size`, so it can be cut into equal,
+        square tiles (square tiles are what make rotating a tile 90
+        degrees fit back into its slot correctly).
+
+        `fit_mode` names the FitStrategy used for that last step: "Crop"
+        (cut the picture down to a square) or "Pad" (keep the whole
+        picture on a blurred background).
+
+        Raises ValueError for an unknown fit mode.
+        """
+        if fit_mode not in FIT_STRATEGIES:
+            raise ValueError(
+                f"Fit mode must be one of {tuple(FIT_STRATEGIES)}, got {fit_mode!r}."
+            )
 
         h, w = image.shape[:2]
         scale = target_size / max(h, w)
@@ -97,28 +167,14 @@ class ImageProcessor:
         interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
         resized = cv2.resize(image, (new_w, new_h), interpolation=interpolation)
 
-        # Centre-crop to a square using the smaller of the two dimensions.
-        side = min(new_h, new_w)
-        top = (new_h - side) // 2
-        left = (new_w - side) // 2
-        square = resized[top:top + side, left:left + side]
-
-        # Trim further so the side length is an exact multiple of grid_size.
-        even_side = (side // grid_size) * grid_size
-        if even_side < grid_size:
-            # Degenerate/tiny image - pad up rather than lose all detail.
-            pad = grid_size - side
-            square = cv2.copyMakeBorder(square, 0, pad, 0, pad, cv2.BORDER_REPLICATE)
-        else:
-            square = square[:even_side, :even_side]
-
-        return square
+        # Polymorphism: whichever strategy was chosen is applied the same way.
+        return FIT_STRATEGIES[fit_mode].apply(resized, grid_size)
 
     @staticmethod
-    def split_into_tiles(square_image, grid_size):
+    def split_into_tiles(square_image: np.ndarray, grid_size: int) -> tuple[list[Tile], int]:
         """Cut a square image into grid_size x grid_size Tile objects,
         returned as a flat, row-major list, along with the pixel length
-        of one tile's edge."""
+        of one tile's edge. Each tile gets its own copy of its pixels."""
         side = square_image.shape[0]
         tile_edge = side // grid_size
 
@@ -128,12 +184,12 @@ class ImageProcessor:
                 y0, y1 = row * tile_edge, (row + 1) * tile_edge
                 x0, x1 = col * tile_edge, (col + 1) * tile_edge
                 tile_pixels = square_image[y0:y1, x0:x1].copy()
-                tiles.append(Tile(tile_pixels, row, col))
+                tiles.append(Tile(tile_pixels, row, col, tile_id=row * grid_size + col))
 
         return tiles, tile_edge
 
     @staticmethod
-    def merge_tiles(tiles, grid_size, tile_edge):
+    def merge_tiles(tiles: list[Tile], grid_size: int, tile_edge: int) -> np.ndarray:
         """Re-assemble the (possibly rotated/flipped/shuffled) tiles - in
         their CURRENT grid order - into a single displayable image."""
         side = tile_edge * grid_size

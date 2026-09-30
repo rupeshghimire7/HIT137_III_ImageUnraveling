@@ -8,7 +8,7 @@ applied to it since the puzzle was scrambled.
 OOP concepts demonstrated here
 -------------------------------
 Encapsulation:
-    The tile's pixel data, home cell and orientation are stored as
+    The tile's pixel data, id, home cell and orientation are stored as
     "private" attributes (leading underscore) and can only be changed
     through the methods below (rotate, flip_horizontal, flip_vertical,
     reset). Outside code never reaches in and edits self._rotation directly.
@@ -31,15 +31,19 @@ horizontally) can always return any tile to its correct orientation.
 """
 
 import cv2
+import numpy as np
 
 RIGHT_ANGLE = 90
+HALF_TURN = 180
 FULL_TURN = 360
 
 
 class Tile:
     """A single piece of the puzzle image."""
 
-    def __init__(self, image, home_row, home_col):
+    def __init__(
+        self, image: np.ndarray, home_row: int, home_col: int, tile_id: int = 0
+    ) -> None:
         """
         Parameters
         ----------
@@ -51,27 +55,38 @@ class Tile:
         home_row, home_col : int
             The row/column this tile belongs to when the picture is fully
             solved (its "home").
+        tile_id : int
+            The tile's number in row-major order of its home cell
+            (home_row * grid_size + home_col). It never changes, so it
+            identifies the tile wherever it is moved to.
 
-        Raises ValueError if the image is empty or the home cell is
-        negative.
+        Raises ValueError if the image is empty, or the home cell or id
+        is negative.
         """
         if image is None or image.size == 0:
             raise ValueError("A tile needs a non-empty image.")
         if home_row < 0 or home_col < 0:
             raise ValueError("A tile's home row/column cannot be negative.")
+        if tile_id < 0:
+            raise ValueError("A tile's id cannot be negative.")
 
         self._original_image = image
         self._home_row = home_row
         self._home_col = home_col
+        self._tile_id = tile_id
 
         # Orientation state - changed only through the methods below.
         self._rotation = 0       # clockwise degrees: 0, 90, 180 or 270
         self._mirrored = False   # mirrored left-right before rotating
 
+        # The pixels as currently oriented, built on demand and thrown
+        # away whenever the orientation changes.
+        self._display_cache: np.ndarray | None = None
+
     # ------------------------------------------------------------------ #
     # State-changing methods
     # ------------------------------------------------------------------ #
-    def rotate(self, degrees):
+    def rotate(self, degrees: int) -> None:
         """Rotate clockwise by `degrees`, a multiple of 90 (use a negative
         value to rotate anticlockwise, e.g. when undoing a rotation).
 
@@ -79,85 +94,108 @@ class Tile:
         """
         if degrees % RIGHT_ANGLE != 0:
             raise ValueError("Tiles can only be rotated in steps of 90 degrees.")
-        self._rotation = (self._rotation + degrees) % FULL_TURN
+        self._set_orientation((self._rotation + degrees) % FULL_TURN, self._mirrored)
 
-    def flip_horizontal(self):
+    def flip_horizontal(self) -> None:
         """Mirror the tile left-right, as it is currently displayed.
 
         Mirroring reverses the direction of any rotation already applied,
         so the stored rotation is negated as the mirror flag toggles.
         """
-        self._rotation = (FULL_TURN - self._rotation) % FULL_TURN
-        self._mirrored = not self._mirrored
+        self._set_orientation(
+            (FULL_TURN - self._rotation) % FULL_TURN, not self._mirrored
+        )
 
-    def flip_vertical(self):
+    def flip_vertical(self) -> None:
         """Mirror the tile top-bottom, as it is currently displayed.
 
         A vertical flip equals a horizontal flip followed by a 180 degree
         rotation, which gives the update rule below.
         """
-        self._rotation = (FULL_TURN + 180 - self._rotation) % FULL_TURN
-        self._mirrored = not self._mirrored
+        self._set_orientation(
+            (FULL_TURN + HALF_TURN - self._rotation) % FULL_TURN, not self._mirrored
+        )
 
-    def reset(self):
+    def reset(self) -> None:
         """Return this tile to its original, untransformed state."""
-        self._rotation = 0
-        self._mirrored = False
+        self._set_orientation(0, False)
+
+    def _set_orientation(self, rotation: int, mirrored: bool) -> None:
+        """Store a new orientation and drop the cached display image."""
+        self._rotation = rotation
+        self._mirrored = mirrored
+        self._display_cache = None
 
     # ------------------------------------------------------------------ #
     # Read-only access
     # ------------------------------------------------------------------ #
     @property
-    def home_row(self):
+    def tile_id(self) -> int:
+        """This tile's fixed number (row-major order of its home cell)."""
+        return self._tile_id
+
+    @property
+    def home_row(self) -> int:
         """Row of the cell this tile belongs in."""
         return self._home_row
 
     @property
-    def home_col(self):
+    def home_col(self) -> int:
         """Column of the cell this tile belongs in."""
         return self._home_col
 
     @property
-    def rotation(self):
+    def rotation(self) -> int:
         """Current clockwise rotation in degrees (0, 90, 180 or 270)."""
         return self._rotation
 
     @property
-    def is_mirrored(self):
+    def is_mirrored(self) -> bool:
         """True if the tile is currently mirrored (before rotation)."""
         return self._mirrored
 
-    def get_display_image(self):
+    @property
+    def is_upright(self) -> bool:
+        """True if the tile is in its original orientation."""
+        return self._rotation == 0 and not self._mirrored
+
+    def get_display_image(self) -> np.ndarray:
         """Return this tile's pixels with its current orientation baked
-        in: mirror first (if mirrored), then rotate clockwise. The stored
-        original image is never mutated - a fresh transformed copy is
-        produced every time this is called."""
-        img = self._original_image
+        in: mirror first (if mirrored), then rotate clockwise.
 
-        if self._mirrored:
-            img = cv2.flip(img, 1)
+        The stored original image is never mutated. The result is cached
+        until the orientation next changes, so redrawing a whole board
+        after one move only re-renders the tile that moved. Callers must
+        treat the returned array as read-only.
+        """
+        if self._display_cache is None:
+            img = self._original_image
 
-        if self._rotation == 90:
-            img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
-        elif self._rotation == 180:
-            img = cv2.rotate(img, cv2.ROTATE_180)
-        elif self._rotation == 270:
-            img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            if self._mirrored:
+                img = cv2.flip(img, 1)
 
-        return img
+            if self._rotation == 90:
+                img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+            elif self._rotation == 180:
+                img = cv2.rotate(img, cv2.ROTATE_180)
+            elif self._rotation == 270:
+                img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-    def is_correct(self, current_row, current_col):
+            self._display_cache = img
+
+        return self._display_cache
+
+    def is_correct(self, current_row: int, current_col: int) -> bool:
         """A tile counts as 'correct' only when it is sitting in its home
         cell AND is in its original orientation."""
         return (
             current_row == self._home_row
             and current_col == self._home_col
-            and self._rotation == 0
-            and not self._mirrored
+            and self.is_upright
         )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
-            f"Tile(home=({self._home_row},{self._home_col}), "
+            f"Tile(id={self._tile_id}, home=({self._home_row},{self._home_col}), "
             f"rotation={self._rotation}, mirrored={self._mirrored})"
         )
