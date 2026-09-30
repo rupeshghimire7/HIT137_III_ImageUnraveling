@@ -1,12 +1,12 @@
-# Tile Rotation Puzzle - HIT137 Assignment 3
+# ImageUnraveling - HIT137 Assignment 3
 
 A desktop puzzle game built with **Tkinter** (GUI) and **OpenCV** (image
 processing), structured into a layered architecture. A loaded image is
 cut into a grid of tiles, scrambled with random swaps/rotations/flips,
 and the player restores it by clicking tiles.
 
-See **`ARCHITECTURE.md`** for the layer diagram and **`TASK_DIVISION.md`**
-for who owns which part of the code.
+See **`docs/PRD_Implementation_Plan.md`** for the full requirements and
+**`progress.md`** for what is implemented and what is still to do.
 
 ## Setup
 
@@ -25,7 +25,7 @@ you may need `sudo apt install python3-tk`.
    **Load Image...** and choose a JPG/PNG/BMP file.
 2. The left canvas shows the original picture (reference only). The right
    canvas shows the scrambled version - only it responds to clicks.
-3. **Left click** a tile to select it (blue border). Left click a second
+3. **Left click** a tile to select it (coloured border). Left click a second
    tile to swap them. Left click the same tile again to deselect it.
 4. **Right click** a tile to rotate it 90° clockwise.
 5. **Shift + left click** a tile to flip it horizontally.
@@ -35,21 +35,26 @@ you may need `sudo apt install python3-tk`.
    in blue, and circles that tile's correct home cell on the original
    image in blue. The circles disappear as soon as you make your next
    move.
-8. **Solve** instantly restores the picture and resets the move/hint
-   counters for that image.
+8. **Solve** instantly restores the picture and resets the move counter
+   for that image; the round then ends.
 9. When every tile is correct you get a completion message and the
    puzzle stops responding to clicks until you load a new image.
 
 ## Project structure
 
 ```
-tile_puzzle_game/
+HIT137_III_ImageUnraveling/
 ├── README.md
-├── ARCHITECTURE.md        <- layer diagram + data-flow walkthrough
-├── TASK_DIVISION.md       <- who owns which package
-├── requirements.txt
-├── github_link.txt        <- put your group's repo URL here before submitting
-├── outputs/               <- sample original/scrambled images (proof the pipeline works)
+├── progress.md            <- PRD requirements: done / not done yet
+├── requirements.txt       <- runtime dependencies
+├── requirements-dev.txt   <- + pytest and ruff for development
+├── pyproject.toml         <- ruff (lint) and pytest settings
+├── github_link.txt
+├── docs/                  <- brief, marking rubric, PRD
+├── outputs/               <- sample original/scrambled images
+├── .github/workflows/ci.yml  <- lint, import check and tests on every push/PR
+├── scripts/
+│   └── check_imports.py   <- imports every module under src/
 ├── src/
 │   ├── main.py            <- entry point
 │   ├── models/            <- Tile + Transformation hierarchy (pure OOP core)
@@ -60,19 +65,21 @@ tile_puzzle_game/
 │   │   └── puzzle_board.py
 │   └── ui/                <- Tkinter front-end
 │       └── gui.py
-└── tests/
-    └── verify_model.py    <- headless self-check, no display needed
+└── tests/                 <- pytest suite, no image files needed
 ```
 
-## Verifying the game logic without opening the GUI
+## Testing and checks
 
 ```bash
-python tests/verify_model.py path/to/any_image.jpg
+pip install -r requirements-dev.txt
+python -m pytest              # all tests (GUI tests skip if there is no display)
+ruff check src tests scripts  # lint: PEP 8, unused names, import order
+python scripts/check_imports.py
 ```
 
-This scrambles, plays random moves, and solves the puzzle at all three
-grid sizes, asserting the model always ends up back in a fully solved
-state, and re-saves the sample images in `outputs/`.
+The same three checks run on GitHub Actions for every push to `main` and
+every pull request (`.github/workflows/ci.yml`); there the GUI tests run
+under a virtual display (`xvfb-run`).
 
 ## How the OOP requirements are met
 
@@ -100,7 +107,7 @@ correct behaviour happens automatically per subclass, with no
 **Class interaction / layering** - `ui/gui.py` never touches OpenCV or
 pixel arrays directly: it calls `engine/puzzle_board.py` methods, which
 in turn call `engine/image_processor.py` (for pixels) and
-`models/transformations.py` (for game moves). See `ARCHITECTURE.md`.
+`models/transformations.py` (for game moves).
 
 ## Design notes
 
@@ -109,8 +116,15 @@ in turn call `engine/image_processor.py` (for pixels) and
   the grid size - square tiles are what make a 90°/180°/270° rotation
   always fit back into its slot.
 - Scramble count is `grid_size * (grid_size - 1)` (6/12/20 for 3x3/4x4/5x5),
-  matching the brief's example, guaranteeing all three transformation
-  types appear and the result isn't trivially already solved.
+  matching the brief's example; at least one swap means the board never
+  starts solved.
+- Each tile's orientation is stored as a rotation plus a mirror flag, and
+  every rotate/flip updates it exactly as the player sees it on screen. So
+  the player's two tile actions (rotate 90° clockwise, flip horizontally)
+  can always undo any scramble, including vertical flips.
+- The scramble draws its tiles from one shuffled pool, so no tile is
+  targeted by more than one transformation, and it always contains at
+  least one swap, rotate and flip.
 - `Solve` pops every transformation ever applied (scramble *and* player
   moves) off a history stack and calls `.undo()` on each, in reverse
   order - a literal "undo everything", exactly as the brief describes.
