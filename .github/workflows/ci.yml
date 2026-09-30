@@ -1,0 +1,71 @@
+# Continuous integration for ImageUnraveling.
+# Runs on every push to main and on every pull request:
+#   lint    - ruff: PEP 8 style, unused/undefined names, import order, bug patterns
+#   imports - every module under src/ imports cleanly with only requirements.txt
+#   tests   - the pytest suite on Python 3.10-3.12, GUI tests under a virtual display
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - name: Lint and import-order check
+        run: ruff check --output-format=github src tests scripts
+
+  imports:
+    name: Import check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install system libraries OpenCV needs
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+      - name: Install runtime dependencies only
+        run: pip install -r requirements.txt
+      - name: Byte-compile all sources
+        run: python -m compileall -q src tests scripts
+      - name: Import every module
+        run: python scripts/check_imports.py
+
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install system libraries (OpenCV, virtual display)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1 libglib2.0-0 xvfb
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run pytest (GUI tests use a virtual display)
+        run: xvfb-run -a python -m pytest -v
