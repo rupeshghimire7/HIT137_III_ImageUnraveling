@@ -71,7 +71,7 @@ HIT137_III_ImageUnraveling/
 ## Testing and checks
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 python -m pytest              # all tests (GUI tests skip if there is no display)
 ruff check src tests scripts  # lint: PEP 8, unused names, import order
 python scripts/check_imports.py
