@@ -1,7 +1,7 @@
 """
 main.py
 
-Entry point for the HIT137 Assignment 3 tile-rotation puzzle.
+Entry point for ImageUnraveling, the HIT137 Assignment 3 tile puzzle.
 
 Run with (from the project root):
     python src/main.py

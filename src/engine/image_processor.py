@@ -30,17 +30,55 @@ class ImageProcessor:
 
     @staticmethod
     def load_image(path):
-        """Read an image file from disk and convert it to RGB.
+        """Read an image file from disk and return it as 8-bit, 3-channel
+        RGB.
 
-        Raises ValueError if the file cannot be decoded as an image (for
-        example the user picked a .txt or .docx file by mistake).
+        The file is read as raw bytes and decoded in memory, which (unlike
+        cv2.imread) also works for paths containing non-English characters.
+        Grayscale images are expanded to 3 channels, transparent areas of
+        PNGs are placed on a white background, and 16-bit images are
+        scaled down to 8-bit.
+
+        Raises ValueError with a message that is safe to show the user if
+        the file is missing or cannot be decoded as an image (for example
+        the user picked a .txt or .docx file by mistake).
         """
-        image = cv2.imread(path, cv2.IMREAD_COLOR)
+        try:
+            data = np.fromfile(path, dtype=np.uint8)
+        except OSError:
+            raise ValueError(
+                "That file could not be opened.\n"
+                "Please check it still exists and try again."
+            ) from None
+
+        image = None
+        if data.size > 0:
+            image = cv2.imdecode(data, cv2.IMREAD_UNCHANGED)
         if image is None:
             raise ValueError(
                 "Could not read that file as an image.\n"
                 "Please choose a JPG, PNG or BMP file."
             )
+        return ImageProcessor._to_rgb(image)
+
+    @staticmethod
+    def _to_rgb(image):
+        """Normalise any decoded OpenCV image to 8-bit, 3-channel RGB."""
+        if image.dtype == np.uint16:
+            image = (image // 257).astype(np.uint8)
+        elif image.dtype != np.uint8:
+            image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+        if image.ndim == 2:
+            return cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+
+        if image.shape[2] == 4:
+            # Composite onto white so transparent areas don't turn black.
+            colour = image[:, :, :3].astype(np.float32)
+            alpha = image[:, :, 3:4].astype(np.float32) / 255.0
+            white = np.full_like(colour, 255.0)
+            image = (colour * alpha + white * (1.0 - alpha)).round().astype(np.uint8)
+
         return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     @staticmethod
@@ -55,7 +93,9 @@ class ImageProcessor:
         scale = target_size / max(h, w)
         new_w = max(1, int(round(w * scale)))
         new_h = max(1, int(round(h * scale)))
-        resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        # Area averaging looks best when shrinking, cubic when enlarging.
+        interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_CUBIC
+        resized = cv2.resize(image, (new_w, new_h), interpolation=interpolation)
 
         # Centre-crop to a square using the smaller of the two dimensions.
         side = min(new_h, new_w)

@@ -1,7 +1,7 @@
 """
 gui.py
 
-The Tkinter front-end for the tile-rotation puzzle. This module is the
+The Tkinter front-end for the ImageUnraveling tile puzzle. This module is the
 only place that talks to Tkinter/PIL - every game rule lives in
 PuzzleBoard, Tile and the Transformation classes, so this file's job is
 just to draw things and turn mouse clicks into calls on the model.
@@ -18,7 +18,8 @@ Solve button            - instantly restores the picture.
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+import traceback
+from tkinter import filedialog, messagebox, ttk
 
 from PIL import Image, ImageTk
 
@@ -29,6 +30,11 @@ GRID_LINE_COLOUR = "#B0B0B0"
 SELECTION_COLOUR = "#1E90FF"
 HINT_COLOUR = "#00A2FF"
 TICK_COLOUR = "#00C851"
+SHIFT_MASK = 0x0001  # bit set in event.state while Shift is held
+CONTROLS_LEGEND = (
+    "Left click: select / swap / deselect   ·   Right click: rotate 90° clockwise"
+    "   ·   Shift + left click: flip horizontally"
+)
 
 
 class PuzzleGameApp(tk.Frame):
@@ -37,8 +43,11 @@ class PuzzleGameApp(tk.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.master = master
-        master.title("Tile Puzzle - HIT137 Assignment 3")
+        master.title("ImageUnraveling - HIT137 Assignment 3")
         master.resizable(False, False)
+        # Any unexpected error inside a button/click handler is shown in a
+        # message box instead of silently breaking the app.
+        master.report_callback_exception = self._report_callback_exception
 
         self.board = None
         self.selected_index = None
@@ -118,7 +127,10 @@ class PuzzleGameApp(tk.Frame):
         self.puzzle_canvas.bind("<Button-1>", self.on_left_click)
         self.puzzle_canvas.bind("<Shift-Button-1>", self.on_shift_click)
         self.puzzle_canvas.bind("<Button-3>", self.on_right_click)
-        self.puzzle_canvas.bind("<Button-2>", self.on_right_click)  # some macOS setups
+        if self.master.tk.call("tk", "windowingsystem") == "aqua":
+            # macOS delivers right clicks as Button-2 or Control + click.
+            self.puzzle_canvas.bind("<Button-2>", self.on_right_click)
+            self.puzzle_canvas.bind("<Control-Button-1>", self.on_right_click)
 
         # --- status bar ---------------------------------------------------
         status = tk.Frame(self)
@@ -131,6 +143,10 @@ class PuzzleGameApp(tk.Frame):
         tk.Label(status, textvariable=self.moves_var, width=14, anchor="w").pack(side=tk.LEFT)
         tk.Label(status, textvariable=self.remaining_var, width=16, anchor="w").pack(side=tk.LEFT)
         tk.Label(status, textvariable=self.hints_var, width=14, anchor="w").pack(side=tk.LEFT)
+
+        tk.Label(self, text=CONTROLS_LEGEND, fg="#555555").grid(
+            row=3, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 8)
+        )
 
     # ------------------------------------------------------------------ #
     # Loading a new image
@@ -145,7 +161,12 @@ class PuzzleGameApp(tk.Frame):
         )
         if not path:
             return  # dialog was cancelled - nothing to do
+        self.load_image_file(path)
 
+    def load_image_file(self, path):
+        """Start a new round from `path` using the chosen grid size. If
+        the file cannot be loaded, an error box is shown and the current
+        round (if any) keeps running untouched."""
         grid_size = int(self.grid_size_var.get().split(" x ")[0])
 
         try:
@@ -180,6 +201,10 @@ class PuzzleGameApp(tk.Frame):
         return self.board.index_at(row, col)
 
     def on_left_click(self, event):
+        if event.state & SHIFT_MASK:
+            # Shift + left click is a flip, never a select/swap.
+            self.on_shift_click(event)
+            return
         if self.board is None or self.game_over:
             return
         index = self._index_from_event(event)
@@ -194,9 +219,9 @@ class PuzzleGameApp(tk.Frame):
             self.board.swap(self.selected_index, index)
             self.selected_index = None
             self.hint_info = None
-            self._check_completion()
 
         self._redraw()
+        self._check_completion()
 
     def on_shift_click(self, event):
         if self.board is None or self.game_over:
@@ -205,9 +230,10 @@ class PuzzleGameApp(tk.Frame):
         if index is None:
             return
         self.board.flip_tile(index, axis="horizontal")
+        self.selected_index = None
         self.hint_info = None
-        self._check_completion()
         self._redraw()
+        self._check_completion()
 
     def on_right_click(self, event):
         if self.board is None or self.game_over:
@@ -216,9 +242,10 @@ class PuzzleGameApp(tk.Frame):
         if index is None:
             return
         self.board.rotate_tile(index, degrees=90)
+        self.selected_index = None
         self.hint_info = None
-        self._check_completion()
         self._redraw()
+        self._check_completion()
 
     # ------------------------------------------------------------------ #
     # Hint / Solve
@@ -241,29 +268,43 @@ class PuzzleGameApp(tk.Frame):
         self._redraw()
 
     def on_solve(self):
-        if self.board is None:
+        if self.board is None or self.game_over:
             return
         self.board.solve()
         self.selected_index = None
         self.hint_info = None
-        self.game_over = False
-        self.hint_btn.config(state=tk.NORMAL)
         self._redraw()
-        self._check_completion()
+        self._lock()
+        messagebox.showinfo(
+            "Solved",
+            "The puzzle was solved automatically and the moves were reset.\n"
+            "Load another image to keep playing.",
+        )
 
     # ------------------------------------------------------------------ #
     # Completion check
     # ------------------------------------------------------------------ #
     def _check_completion(self):
         if self.board.is_solved():
-            self.game_over = True
-            self.hint_btn.config(state=tk.DISABLED)
-            self.solve_btn.config(state=tk.DISABLED)
+            self._lock()
             messagebox.showinfo(
                 "Solved!",
                 f"You restored the picture in {self.board.moves} moves!\n"
                 "Load another image to keep playing.",
             )
+
+    def _lock(self):
+        """End the round: no further puzzle input until a new image."""
+        self.game_over = True
+        self.hint_btn.config(state=tk.DISABLED)
+        self.solve_btn.config(state=tk.DISABLED)
+
+    def _report_callback_exception(self, exc_type, exc_value, exc_traceback):
+        traceback.print_exception(exc_type, exc_value, exc_traceback)
+        messagebox.showerror(
+            "Something went wrong",
+            f"{exc_value}\n\nYou can keep playing or load a new image.",
+        )
 
     # ------------------------------------------------------------------ #
     # Drawing
@@ -291,7 +332,7 @@ class PuzzleGameApp(tk.Frame):
             radius = edge // 4
             self.original_canvas.create_oval(
                 cx - radius, cy - radius, cx + radius, cy + radius,
-                outline=HINT_COLOUR, width=3,
+                outline=HINT_COLOUR, width=3, tags="hint",
             )
 
         # --- puzzle (transformed) image ----------------------------------
@@ -303,8 +344,10 @@ class PuzzleGameApp(tk.Frame):
         # faint grid lines so tile boundaries are visible
         size = edge * n
         for i in range(1, n):
-            self.puzzle_canvas.create_line(0, i * edge, size, i * edge, fill=GRID_LINE_COLOUR)
-            self.puzzle_canvas.create_line(i * edge, 0, i * edge, size, fill=GRID_LINE_COLOUR)
+            self.puzzle_canvas.create_line(0, i * edge, size, i * edge, fill=GRID_LINE_COLOUR,
+                                           tags="grid")
+            self.puzzle_canvas.create_line(i * edge, 0, i * edge, size, fill=GRID_LINE_COLOUR,
+                                           tags="grid")
 
         # green ticks on correctly placed/oriented tiles
         for index, tile in enumerate(self.board.tiles):
@@ -314,6 +357,7 @@ class PuzzleGameApp(tk.Frame):
                 self.puzzle_canvas.create_text(
                     x0 + edge - 12, y0 + 12, text="✔",
                     fill=TICK_COLOUR, font=("Arial", max(10, edge // 6), "bold"),
+                    tags="tick",
                 )
 
         # selection highlight
@@ -322,7 +366,7 @@ class PuzzleGameApp(tk.Frame):
             x0, y0 = col * edge, row * edge
             self.puzzle_canvas.create_rectangle(
                 x0 + 2, y0 + 2, x0 + edge - 2, y0 + edge - 2,
-                outline=SELECTION_COLOUR, width=3,
+                outline=SELECTION_COLOUR, width=3, tags="select",
             )
 
         # hint circle on the puzzle image itself
@@ -334,7 +378,7 @@ class PuzzleGameApp(tk.Frame):
             radius = edge // 4
             self.puzzle_canvas.create_oval(
                 cx - radius, cy - radius, cx + radius, cy + radius,
-                outline=HINT_COLOUR, width=3,
+                outline=HINT_COLOUR, width=3, tags="hint",
             )
 
         # status labels

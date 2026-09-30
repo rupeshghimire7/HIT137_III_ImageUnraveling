@@ -8,13 +8,18 @@ Tkinter - gui.py only ever calls its public methods, which keeps the game
 rules completely testable on their own (see verify_model.py).
 """
 
+import random
+
 from engine.image_processor import ImageProcessor
 from models.transformations import (
-    RotateTransformation,
     FlipTransformation,
+    RotateTransformation,
     SwapTransformation,
     random_transformation,
 )
+
+SUPPORTED_GRID_SIZES = (3, 4, 5)
+MAX_HINTS = 3
 
 
 class PuzzleBoard:
@@ -23,8 +28,19 @@ class PuzzleBoard:
     it (scramble AND player moves), so the round can be perfectly undone
     by the Solve button."""
 
-    def __init__(self, image_path, grid_size):
+    def __init__(self, image_path, grid_size, seed=None):
+        """Load `image_path`, cut it into a grid_size x grid_size grid and
+        scramble it. Pass `seed` to get a reproducible scramble.
+
+        Raises ValueError for an unsupported grid size or a file that
+        cannot be read as an image.
+        """
+        if grid_size not in SUPPORTED_GRID_SIZES:
+            raise ValueError(
+                f"Grid size must be one of {SUPPORTED_GRID_SIZES}, got {grid_size}."
+            )
         self.grid_size = grid_size
+        self._rng = random.Random(seed)
 
         original = ImageProcessor.load_image(image_path)
         self.reference_image = ImageProcessor.prepare_square(
@@ -36,54 +52,64 @@ class PuzzleBoard:
         self.history = []   # every Transformation applied so far, in order
         self.moves = 0       # player-caused moves only (swap/rotate/flip)
         self.hints_used = 0
-        self.max_hints = 3
+        self.max_hints = MAX_HINTS
 
         self._scramble()
 
     # Scrambling - called once, from __init__
     def _scramble(self):
-        """Apply a batch of random transformations so the picture starts
-        in a shuffled state. The count scales with grid size (6 for 3x3,
-        12 for 4x4, 20 for 5x5, i.e. grid_size * (grid_size - 1))."""
-        transformation_count = self.grid_size * (self.grid_size - 1)
+        """Apply a batch of random transformations, all generated at once,
+        so the picture starts in a shuffled state.
 
-        applied_kinds = set()
-        for _ in range(transformation_count):
-            transformation = random_transformation(self)
+        - The count scales with grid size: grid_size * (grid_size - 1),
+          i.e. 6 for 3x3, 12 for 4x4 and 20 for 5x5.
+        - Every scramble contains at least one swap, rotate and flip.
+        - No tile is targeted twice: a swap uses two tiles and a
+          rotate/flip one, all drawn from one shuffled pool of positions.
+          count + swaps must fit in grid_size**2 tiles, so swaps <= N.
+        - At least one swap means the board can never start solved.
+        """
+        n = self.grid_size
+        transformation_count = n * (n - 1)
+        swaps = self._rng.randint(1, n)
+        rest = transformation_count - swaps
+        rotates = self._rng.randint(1, rest - 1)
+        flips = rest - rotates
+
+        kinds = ["swap"] * swaps + ["rotate"] * rotates + ["flip"] * flips
+        self._rng.shuffle(kinds)
+        pool = list(range(n * n))
+        self._rng.shuffle(pool)
+
+        # Polymorphism: every transformation is applied the same way,
+        # without checking which concrete subclass it is.
+        for kind in kinds:
+            transformation = random_transformation(self, kind, pool, self._rng)
             transformation.apply()
             self.history.append(transformation)
-            applied_kinds.add(type(transformation))
-
-        # Guarantee all three transformation types appear at least once,
-        # and that the scramble hasn't landed back on the solved picture.
-        required = {RotateTransformation,
-                    FlipTransformation, SwapTransformation}
-        safety_limit = transformation_count + 50
-        while (not required.issubset(applied_kinds) or self.is_solved()) and safety_limit > 0:
-            transformation = random_transformation(self)
-            transformation.apply()
-            self.history.append(transformation)
-            applied_kinds.add(type(transformation))
-            safety_limit -= 1
 
     # Player actions - every one is a Transformation, pushed onto history
+    # Each returns True if the move was made, or False if it was ignored
+    # because the puzzle is already complete (no further input accepted).
     def swap(self, index_a, index_b):
-        t = SwapTransformation(self, index_a, index_b)
-        t.apply()
-        self.history.append(t)
-        self.moves += 1
+        """Swap the tiles at two positions (one move)."""
+        return self._play(SwapTransformation(self, index_a, index_b))
 
     def rotate_tile(self, index, degrees=90):
-        t = RotateTransformation(self, index, degrees)
-        t.apply()
-        self.history.append(t)
-        self.moves += 1
+        """Rotate the tile at `index` clockwise (one move)."""
+        return self._play(RotateTransformation(self, index, degrees))
 
     def flip_tile(self, index, axis="horizontal"):
-        t = FlipTransformation(self, index, axis)
-        t.apply()
-        self.history.append(t)
+        """Flip the tile at `index` along `axis` (one move)."""
+        return self._play(FlipTransformation(self, index, axis))
+
+    def _play(self, transformation):
+        if self.is_solved():
+            return False
+        transformation.apply()
+        self.history.append(transformation)
         self.moves += 1
+        return True
 
     # Solve / hints
     def solve(self):

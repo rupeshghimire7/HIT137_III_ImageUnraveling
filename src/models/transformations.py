@@ -22,8 +22,8 @@ Polymorphism:
     happens automatically because each subclass overrides apply()/undo().
 """
 
-from abc import ABC, abstractmethod
 import random
+from abc import ABC, abstractmethod
 
 
 class Transformation(ABC):
@@ -65,9 +65,13 @@ class TileTransformation(Transformation):
 class RotateTransformation(TileTransformation):
     """Rotates one tile clockwise by a multiple of 90 degrees."""
 
+    VALID_DEGREES = (90, 180, 270)
+
     def __init__(self, board, tile_index, degrees=90):
         super().__init__(board, tile_index)
-        self.degrees = degrees % 360
+        if degrees not in self.VALID_DEGREES:
+            raise ValueError("degrees must be 90, 180 or 270")
+        self.degrees = degrees
 
     def apply(self):
         self.tile.rotate(self.degrees)
@@ -107,6 +111,8 @@ class SwapTransformation(Transformation):
 
     def __init__(self, board, index_a, index_b):
         super().__init__(board)
+        if index_a == index_b:
+            raise ValueError("a tile cannot be swapped with itself")
         self.index_a = index_a
         self.index_b = index_b
 
@@ -124,28 +130,28 @@ class SwapTransformation(Transformation):
         return f"swap tiles {self.index_a} and {self.index_b}"
 
 
-def random_transformation(board):
-    """Factory function: builds one randomly chosen transformation (swap,
-    rotate or flip) acting on a random tile/pair of tiles of `board`. Used
-    while scrambling a freshly loaded image.
+def random_transformation(board, kind, pool, rng=random):
+    """Factory function: builds one transformation of the given `kind`
+    ("swap", "rotate" or "flip") with random parameters, used while
+    scrambling a freshly loaded image.
+
+    The tile positions it acts on are popped from `pool` (a shuffled list
+    of still-untouched positions), so across a whole scramble no tile is
+    ever targeted by more than one transformation.
 
     This is the "class interaction" piece that ties the transformation
     hierarchy to PuzzleBoard without PuzzleBoard needing to know anything
     about how each transformation type works internally.
     """
-    kind = random.choice(("swap", "rotate", "flip"))
-    n = len(board.tiles)
-
     if kind == "swap":
-        i, j = random.sample(range(n), 2)  # sample() guarantees i != j
-        return SwapTransformation(board, i, j)
+        return SwapTransformation(board, pool.pop(), pool.pop())
 
     if kind == "rotate":
-        i = random.randrange(n)
-        degrees = random.choice((90, 180, 270))
-        return RotateTransformation(board, i, degrees)
+        degrees = rng.choice(RotateTransformation.VALID_DEGREES)
+        return RotateTransformation(board, pool.pop(), degrees)
 
-    # kind == "flip"
-    i = random.randrange(n)
-    axis = random.choice(("horizontal", "vertical"))
-    return FlipTransformation(board, i, axis)
+    if kind == "flip":
+        axis = rng.choice(("horizontal", "vertical"))
+        return FlipTransformation(board, pool.pop(), axis)
+
+    raise ValueError(f"unknown transformation kind: {kind!r}")
