@@ -1,10 +1,18 @@
-"""Shared pytest fixtures. Every test image is generated on the fly, so the
-suite needs no image files and no display (except the GUI tests, which
-skip themselves when no display is available)."""
+# ====================================================================== #
+#  Shared test set-up (fixtures and image helpers) - not a test file.
+#  Used by every test_*.py in this folder. Owned by the whole group.
+# ====================================================================== #
+
+import sys
+from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
+
+SRC = Path(__file__).resolve().parent.parent / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 
 def write_image(path, image):
