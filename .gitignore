@@ -26,8 +26,13 @@ Thumbs.db
 
 # Test / coverage
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 
 # Logs
 *.log
+
+pyproject.toml
+progress.md
+requirements-dev.txt
