@@ -21,9 +21,9 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from ui.hit_test import pixel_to_cell
+from ui.theme import CANVAS_BACKGROUND, CARD_OPTIONS, LABEL_OPTIONS
 
 CANVAS_SIZE = 480
-CANVAS_BACKGROUND = "#222222"
 GRID_LINE_COLOUR = "#B0B0B0"
 SELECTION_COLOUR = "#1E90FF"
 HINT_COLOUR = "#00A2FF"
@@ -48,15 +48,17 @@ class ImagePanel(tk.Frame):
     drawn per cell."""
 
     def __init__(self, parent: tk.Misc, title: str) -> None:
-        """Create the panel inside `parent` with `title` above the canvas."""
-        super().__init__(parent)
-        tk.Label(self, text=title).pack()
+        """Create the panel inside `parent` as a solid card (so its title
+        stays readable over the window's gradient) with `title` above the
+        canvas."""
+        super().__init__(parent, padx=8, pady=4, **CARD_OPTIONS)
+        tk.Label(self, text=title, **LABEL_OPTIONS).pack(pady=(0, 3))
         self._canvas = tk.Canvas(
             self,
             width=CANVAS_SIZE,
             height=CANVAS_SIZE,
             bg=CANVAS_BACKGROUND,
-            highlightthickness=1,
+            highlightthickness=0,
         )
         self._canvas.pack()
 
@@ -75,11 +77,17 @@ class ImagePanel(tk.Frame):
 
     def show(self, image: np.ndarray, grid_size: int) -> None:
         """Replace everything on the panel with `image` (a square RGB
-        array), centred, and draw the faint grid over it."""
+        array), centred in the canvas, and draw the faint grid over it.
+
+        Canvas coordinates start at the outer edge of the widget, under
+        any border, so the border width is added to the offsets: that
+        keeps the picture exactly centred in the visible area even if a
+        border is added to the canvas later."""
         self._grid_size = grid_size
         self._image_side = image.shape[0]
-        self._image_left = (CANVAS_SIZE - image.shape[1]) // 2
-        self._image_top = (CANVAS_SIZE - image.shape[0]) // 2
+        inset = int(self._canvas["borderwidth"]) + int(self._canvas["highlightthickness"])
+        self._image_left = inset + (CANVAS_SIZE - image.shape[1]) // 2
+        self._image_top = inset + (CANVAS_SIZE - image.shape[0]) // 2
 
         self._canvas.delete("all")
         self._photo = ImageTk.PhotoImage(Image.fromarray(image))

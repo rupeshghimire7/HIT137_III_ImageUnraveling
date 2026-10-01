@@ -33,6 +33,7 @@ htmlcov/
 # Logs
 *.log
 
-pyproject.toml
 progress.md
+updates.md
 requirements-dev.txt
+pyproject.toml

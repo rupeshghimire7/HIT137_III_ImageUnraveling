@@ -17,12 +17,7 @@ import random
 import numpy as np
 import pytest
 
-from engine.fit_strategy import PAD
-from engine.hints import RandomHint
-from engine.image_processor import ImageProcessor
-from engine.par_solver import ParSolver
 from engine.puzzle_board import MAX_HINTS, PuzzleBoard
-from models.tile import Tile
 from models.transformations import (
     FlipTransformation,
     RotateTransformation,
@@ -176,7 +171,9 @@ def test_solve_after_random_moves_and_hint(image_path):
     board.use_hint()
     board.solve()
     assert board.is_solved()
-    assert board.history == [] and board.moves == 0 and board.hints_used == 0
+    assert board.history == [] and board.moves == 0
+    # PRD: the hint budget resets only when a new image is loaded.
+    assert board.hints_used == 1 and board.use_hint() is None
 
 
 def test_manual_undo_counts_as_solved(board):

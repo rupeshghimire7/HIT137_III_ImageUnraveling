@@ -3,7 +3,7 @@
 #                  (Transformation hierarchy + random_transformation)
 #
 #  Student name : Hemanta Adhikari
-#  Student ID   : S403355       
+#  Student ID   : S403355
 #  Layer        : Core OOP models
 #
 #  Run only this file (from the project root):

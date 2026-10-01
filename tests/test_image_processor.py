@@ -2,7 +2,7 @@
 #  Unit tests for: src/engine/image_processor.py  (class ImageProcessor)
 #
 #  Student name : John Karki
-#  Student ID   : S403518     
+#  Student ID   : S403518
 #  Layer        : Image processing (OpenCV)
 #
 #  Run only this file (from the project root):
@@ -38,31 +38,32 @@ def test_other_formats_load(tmp_path, ext):
 
 
 def test_grayscale_becomes_three_channels(tmp_path):
-    gray = np.full((10, 12), 77, dtype=np.uint8)
+    # At least ImageProcessor.MIN_SIDE (16 px) - smaller files are rejected.
+    gray = np.full((16, 18), 77, dtype=np.uint8)
     path = write_image(tmp_path / "gray.png", gray)
     loaded = ImageProcessor.load_image(str(path))
-    assert loaded.shape == (10, 12, 3)
+    assert loaded.shape == (16, 18, 3)
     assert (loaded == 77).all()
 
 
 def test_transparent_png_goes_on_white(tmp_path):
-    bgra = np.zeros((8, 8, 4), dtype=np.uint8)   # fully transparent black
+    bgra = np.zeros((16, 16, 4), dtype=np.uint8)   # fully transparent black
     path = write_image(tmp_path / "clear.png", bgra)
     loaded = ImageProcessor.load_image(str(path))
-    assert loaded.shape == (8, 8, 3)
+    assert loaded.shape == (16, 16, 3)
     assert (loaded == 255).all()
 
 
 def test_16_bit_png_scaled_to_8_bit(tmp_path):
-    img16 = np.full((6, 6, 3), 65535, dtype=np.uint16)
+    img16 = np.full((16, 16, 3), 65535, dtype=np.uint16)
     path = write_image(tmp_path / "deep.png", img16)
     loaded = ImageProcessor.load_image(str(path))
     assert loaded.dtype == np.uint8 and (loaded == 255).all()
 
 
 def test_non_ascii_path_loads(tmp_path):
-    path = write_image(tmp_path / "छवि_图片.png", noise_image(10, 10))
-    assert ImageProcessor.load_image(str(path)).shape == (10, 10, 3)
+    path = write_image(tmp_path / "छवि_图片.png", noise_image(16, 16))
+    assert ImageProcessor.load_image(str(path)).shape == (16, 16, 3)
 
 
 def test_non_image_file_raises_value_error(tmp_path):

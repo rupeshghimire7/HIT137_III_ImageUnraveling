@@ -11,7 +11,8 @@ import pytest
 from conftest import noise_image, write_image
 from engine.fit_strategy import PAD
 from ui import gui
-from ui.panels import SHIFT_MASK, TAG_GRID, TAG_HINT, TAG_SELECT, TAG_TICK
+from ui.panels import CANVAS_SIZE, SHIFT_MASK, TAG_GRID, TAG_HINT, TAG_SELECT, TAG_TICK
+from ui.theme import GRADIENT_PERIOD, GradientBackground, gradient_image
 
 
 @pytest.fixture
@@ -242,3 +243,44 @@ def test_loading_new_image_resets_round(app, picture):
     assert state(app.hint_btn) == state(app.solve_btn) == "normal"
     assert app.hint_btn["text"] == "Hint (3)"
     assert not app.original_panel.canvas.find_withtag(TAG_HINT)
+
+
+def test_picture_is_centred_in_both_panels(app, picture):
+    load(app, picture)   # cropped to a 360 px square inside the 480 px canvas
+    side = app.board.reference_image.shape[0]
+    margin = (CANVAS_SIZE - side) // 2
+    for panel in (app.original_panel, app.puzzle_panel):
+        x0, y0, x1, y1 = panel.canvas.bbox(panel.canvas.find_all()[0])
+        assert (x0, y0, x1, y1) == (margin, margin, margin + side, margin + side)
+
+
+def test_gradient_sits_under_every_other_widget(app):
+    assert isinstance(app.winfo_children()[0], GradientBackground)
+
+
+def test_gradient_loops_without_a_seam():
+    strip = gradient_image(GRADIENT_PERIOD + 50, 20)
+    assert strip.shape == (20, GRADIENT_PERIOD + 50, 3)
+    assert (strip[:, :50] == strip[:, GRADIENT_PERIOD:]).all()
+
+
+def test_random_upload_loads_a_square_sample(app):
+    app.on_random_image()
+    assert app.board is not None and not app.game_over
+    assert app.last_sample in gui.sample_image_paths()
+    image = app.board.reference_image
+    assert image.shape[0] == image.shape[1] == CANVAS_SIZE
+
+
+def test_random_upload_never_repeats_the_same_picture_twice_in_a_row(app):
+    previous = None
+    for _ in range(10):
+        app.on_random_image()
+        assert app.last_sample != previous
+        previous = app.last_sample
+
+
+def test_random_upload_without_samples_shows_error(app, dialogs, monkeypatch):
+    monkeypatch.setattr(gui, "sample_image_paths", lambda: [])
+    app.on_random_image()
+    assert dialogs[-1][0] == "error" and app.board is None

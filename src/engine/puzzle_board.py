@@ -212,6 +212,11 @@ class PuzzleBoard:
         """Hints still available for this image."""
         return self._state.hints_left
 
+    @property
+    def hints_used(self) -> int:
+        """Hints used so far for this image (Solve does not give them back)."""
+        return self._state.hints_used
+
     # Queries
     def incorrect_indices(self) -> list[int]:
         """Positions of every tile that is not yet in its home cell the

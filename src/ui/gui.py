@@ -15,31 +15,46 @@ Right click a tile     - rotate it 90 degrees clockwise.
 Shift + left click     - flip it horizontally.
 Hint button            - highlights one wrong tile (max 3 per image).
 Solve button           - instantly restores the picture.
+Random Upload button   - starts a round with one of the square sample
+                         pictures in assets/images.
 """
 
 import logging
+import random
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from types import TracebackType
 
 from engine.fit_strategy import DEFAULT_FIT_MODE, FIT_STRATEGIES
-from engine.image_processor import ImageLoadError
+from engine.image_processor import ImageLoadError, ImageProcessor
 from engine.puzzle_board import MAX_HINTS, SUPPORTED_GRID_SIZES, PuzzleBoard
 from engine.scoring import MAX_STARS
 from models.transformations import HORIZONTAL
 from ui.panels import TAG_HINT, InteractivePanel, ReferencePanel
+from ui.theme import (
+    BUTTON_OPTIONS,
+    CARD_BG,
+    CARD_OPTIONS,
+    LABEL_OPTIONS,
+    TEXT_MUTED,
+    GradientBackground,
+    style_widgets,
+)
 
 logger = logging.getLogger(__name__)
 
 TIMER_INTERVAL_MS = 1000
-LEGEND_COLOUR = "#555555"
+SAMPLE_IMAGES_DIR = Path(__file__).resolve().parents[2] / "assets" / "images"
+OUTER_PAD = 12          # gradient visible around the edge of the window
+CARD_GAP = 10           # gradient visible between the cards
 STAR_FILLED = "★"
 STAR_EMPTY = "☆"
 CONTROLS_LEGEND = (
     "Left click: select / swap / deselect   ·   Right click: rotate 90° clockwise"
     "   ·   Shift + left click: flip horizontally"
 )
-STATUS_WELCOME = "Choose a grid size, then load an image to start."
+STATUS_WELCOME = "Choose a grid size, then load an image (or press Random Upload) to start."
 STATUS_PLAYING = "Restore the picture!"
 STATUS_WON = "Solved! Load a new image to play again."
 STATUS_AUTO_SOLVED = "Auto-solved. Load a new image to play again."
@@ -54,6 +69,18 @@ def grid_label(grid_size: int) -> str:
 def format_time(seconds: int) -> str:
     """Seconds as mm:ss."""
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
+
+
+def sample_image_paths(folder: Path = SAMPLE_IMAGES_DIR) -> list[Path]:
+    """Every picture in `folder` that the game can load, sorted by name.
+    An empty list if the folder is missing."""
+    if not folder.is_dir():
+        return []
+    return sorted(
+        path
+        for path in folder.iterdir()
+        if path.suffix.lower() in ImageProcessor.ALLOWED_EXTENSIONS
+    )
 
 
 class PuzzleGameApp(tk.Frame):
@@ -73,43 +100,64 @@ class PuzzleGameApp(tk.Frame):
         self.selected_index: int | None = None
         self.hint_info: tuple[int, int, int] | None = None   # (tile_index, home_row, home_col)
         self.game_over = False
+        self.last_sample: Path | None = None   # last picture from Random Upload
 
+        style_widgets(master)
         self._build_widgets()
         self.pack()
+        self._centre_on_screen()
         self._tick()
+
+    def _centre_on_screen(self) -> None:
+        """Place the window in the middle of the screen."""
+        master = self.master
+        master.update_idletasks()
+        width, height = master.winfo_reqwidth(), master.winfo_reqheight()
+        x = max(0, (master.winfo_screenwidth() - width) // 2)
+        y = max(0, (master.winfo_screenheight() - height) // 2)
+        master.geometry(f"+{x}+{y}")
 
     # ------------------------------------------------------------------ #
     # Widget construction
     # ------------------------------------------------------------------ #
     def _build_widgets(self) -> None:
+        # Created first so it stays underneath every other widget: the
+        # gradient then shows only in the gaps around the cards.
+        self.background = GradientBackground(self)
         self._build_toolbar()
 
-        images_frame = tk.Frame(self)
-        images_frame.grid(row=1, column=0, padx=10)
-        self.original_panel = ReferencePanel(images_frame, "Original (reference only)")
-        self.original_panel.pack(side=tk.LEFT, padx=(0, 10))
+        self.original_panel = ReferencePanel(self, "Original (reference only)")
+        self.original_panel.grid(row=1, column=0, padx=(OUTER_PAD, CARD_GAP // 2))
         # Only the transformed/right-hand panel responds to clicks.
         self.puzzle_panel = InteractivePanel(
-            images_frame,
+            self,
             "Puzzle (click to solve)",
             on_left=self.on_tile_left,
             on_right=self.on_tile_right,
             on_shift_left=self.on_tile_shift_left,
         )
-        self.puzzle_panel.pack(side=tk.LEFT)
+        self.puzzle_panel.grid(row=1, column=1, padx=(CARD_GAP // 2, OUTER_PAD))
 
         self._build_status_bar()
 
     def _build_toolbar(self) -> None:
-        controls = tk.Frame(self)
-        controls.grid(row=0, column=0, sticky="ew", padx=10, pady=8)
+        controls = tk.Frame(self, padx=10, pady=5, **CARD_OPTIONS)
+        controls.grid(
+            row=0, column=0, columnspan=2, sticky="ew",
+            padx=OUTER_PAD, pady=(OUTER_PAD, CARD_GAP),
+        )
 
         self.load_btn = tk.Button(
-            controls, text="Load Image...", command=self.on_load_image
+            controls, text="Load Image...", command=self.on_load_image, **BUTTON_OPTIONS
         )
-        self.load_btn.pack(side=tk.LEFT, padx=(0, 12))
+        self.load_btn.pack(side=tk.LEFT, padx=(0, 6))
 
-        tk.Label(controls, text="Grid size:").pack(side=tk.LEFT)
+        self.random_btn = tk.Button(
+            controls, text="Random Upload", command=self.on_random_image, **BUTTON_OPTIONS
+        )
+        self.random_btn.pack(side=tk.LEFT, padx=(0, 16))
+
+        tk.Label(controls, text="Grid size:", **LABEL_OPTIONS).pack(side=tk.LEFT)
         self.grid_size_var = tk.StringVar(value=grid_label(SUPPORTED_GRID_SIZES[0]))
         self.grid_size_combo = ttk.Combobox(
             controls,
@@ -120,7 +168,7 @@ class PuzzleGameApp(tk.Frame):
         )
         self.grid_size_combo.pack(side=tk.LEFT, padx=(4, 12))
 
-        tk.Label(controls, text="Fit:").pack(side=tk.LEFT)
+        tk.Label(controls, text="Fit:", **LABEL_OPTIONS).pack(side=tk.LEFT)
         self.fit_mode_var = tk.StringVar(value=DEFAULT_FIT_MODE)
         self.fit_mode_combo = ttk.Combobox(
             controls,
@@ -135,32 +183,40 @@ class PuzzleGameApp(tk.Frame):
             combo.bind("<<ComboboxSelected>>", self.on_setting_changed)
 
         self.hint_btn = tk.Button(
-            controls, text=f"Hint ({MAX_HINTS})", command=self.on_hint, state=tk.DISABLED
+            controls, text=f"Hint ({MAX_HINTS})", command=self.on_hint,
+            state=tk.DISABLED, **BUTTON_OPTIONS,
         )
         self.hint_btn.pack(side=tk.LEFT, padx=4)
 
         self.solve_btn = tk.Button(
-            controls, text="Solve", command=self.on_solve, state=tk.DISABLED
+            controls, text="Solve", command=self.on_solve, state=tk.DISABLED, **BUTTON_OPTIONS
         )
         self.solve_btn.pack(side=tk.LEFT, padx=4)
 
     def _build_status_bar(self) -> None:
-        counters = tk.Frame(self)
-        counters.grid(row=2, column=0, sticky="ew", padx=10, pady=(8, 0))
+        status = tk.Frame(self, padx=10, pady=5, **CARD_OPTIONS)
+        status.grid(
+            row=2, column=0, columnspan=2, sticky="ew",
+            padx=OUTER_PAD, pady=(CARD_GAP, OUTER_PAD),
+        )
 
+        counters = tk.Frame(status, bg=CARD_BG)
+        counters.pack(fill=tk.X)
         self.moves_var = tk.StringVar(value="Moves: 0")
         self.remaining_var = tk.StringVar(value="Tiles left: -")
         self.time_var = tk.StringVar(value="Time: 00:00")
         self.score_var = tk.StringVar(value="Score: -")
         for variable in (self.moves_var, self.remaining_var, self.time_var, self.score_var):
-            tk.Label(counters, textvariable=variable, width=16, anchor="w").pack(side=tk.LEFT)
+            tk.Label(
+                counters, textvariable=variable, width=16, anchor="w", **LABEL_OPTIONS
+            ).pack(side=tk.LEFT)
 
         self.status_var = tk.StringVar(value=STATUS_WELCOME)
-        tk.Label(self, textvariable=self.status_var, anchor="w").grid(
-            row=3, column=0, sticky="ew", padx=10, pady=(4, 0)
+        tk.Label(status, textvariable=self.status_var, anchor="w", **LABEL_OPTIONS).pack(
+            fill=tk.X, pady=(2, 0)
         )
-        tk.Label(self, text=CONTROLS_LEGEND, fg=LEGEND_COLOUR).grid(
-            row=4, column=0, sticky="w", padx=10, pady=(4, 8)
+        tk.Label(status, text=CONTROLS_LEGEND, anchor="w", bg=CARD_BG, fg=TEXT_MUTED).pack(
+            fill=tk.X, pady=(2, 0)
         )
 
     # ------------------------------------------------------------------ #
@@ -178,6 +234,21 @@ class PuzzleGameApp(tk.Frame):
         if not path:
             return  # dialog was cancelled - nothing to do
         self.load_image_file(path)
+
+    def on_random_image(self) -> None:
+        """Random Upload button: start a round with one of the sample
+        pictures in assets/images, never the same one twice in a row."""
+        paths = sample_image_paths()
+        if not paths:
+            messagebox.showerror(
+                "No sample images",
+                f"No pictures were found in {SAMPLE_IMAGES_DIR}.\n"
+                "Use Load Image... to choose your own.",
+            )
+            return
+        choices = [path for path in paths if path != self.last_sample] or paths
+        self.last_sample = random.choice(choices)
+        self.load_image_file(str(self.last_sample))
 
     def load_image_file(self, path: str) -> None:
         """Start a new round from `path` using the chosen grid size and
