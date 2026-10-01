@@ -78,7 +78,16 @@ HIT137_III_ImageUnraveling/
     ├── test_puzzle_board.py     <- Ashim Koirala
     └── test_gui.py              <- Rupesh Ghimire
 ```
+## Sound
 
+The game has background music and sound effects (pygame). Music starts
+when an image is loaded; every select, swap, rotate, flip and hint has its
+own effect, a move that puts a tile in the right place plays a "ding",
+a move that makes the picture worse plays a mistake buzz, loading a bad
+file plays an error sound, and finishing the puzzle plays a winner fanfare.
+Press **M** to mute/unmute. All sound files are in `assets/sounds/`; the
+code is in `src/audio/` and `gui.py` is unchanged. If pygame or an audio
+device is missing the game simply runs silently.
 ## Unit testing
 
 Every source file has its own unit-test file in `tests/`, written by the
