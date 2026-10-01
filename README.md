@@ -102,7 +102,7 @@ each test file gives the student's name and student ID.
 | `tests/test_transformations.py` | `src/models/transformations.py`  | Hemanta Adhikari | S403355    | 23    |
 | `tests/test_image_processor.py` | `src/engine/image_processor.py`  | John Karki       | S403518    | 39    |
 | `tests/test_puzzle_board.py`    | `src/engine/puzzle_board.py`     | Ashim Koirala    | S407089    | 58    |
-| `tests/test_gui.py`             | `src/ui/gui.py`, `src/main.py`   | Rupesh Ghimire   | S000000    | 19    |
+| `tests/test_gui.py`             | `src/ui/gui.py`, `src/main.py`   | Rupesh Ghimire   | S403354    | 19    |
 | `tests/conftest.py`             | shared fixtures, not a test file | Whole group      | -          | -     |
 
 The tests use **pytest**. They generate their own small test images in a
@@ -256,14 +256,3 @@ in turn call `engine/image_processor.py` (for pixels) and
 - All file/image errors (cancelled dialog, non-image file, corrupt file)
   are caught and shown in a message box instead of crashing the app;
   clicks outside the puzzle image are silently ignored.
-
-## Before you submit
-
-1. Make sure every team member understands their section (and ideally
-   the whole app) - you may be asked about any part of it.
-2. Check the repository is **public** and all group members are added.
-3. Replace every `S000000` in this README and in the test file headers
-   with the real student IDs.
-4. Check the repository URL in `github_link.txt`.
-5. Zip the programming files, the `outputs/` folder and `github_link.txt`
-   together and upload to Learnline.
