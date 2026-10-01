@@ -8,16 +8,15 @@ Run with (from the project root):
 
 Requires: opencv-python, numpy, Pillow (see requirements.txt)
 """
-
 import tkinter as tk
 
-from ui.gui import PuzzleGameApp
+from audio.sound_game import SoundPuzzleGameApp
 
 
 def main() -> None:
     """Open the game window and run until it is closed."""
     root = tk.Tk()
-    PuzzleGameApp(root)
+    SoundPuzzleGameApp(root)
     root.mainloop()
 
 

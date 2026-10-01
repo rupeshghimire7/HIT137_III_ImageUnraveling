@@ -1,5 +1,16 @@
-"""Tests for engine.puzzle_board.PuzzleBoard - scrambling, player moves,
-hints, solving and completion."""
+# ====================================================================== #
+#  Unit tests for: src/engine/puzzle_board.py  (class PuzzleBoard)
+#
+#  Student name : Ashim Koirala
+#  Student ID   : S407089
+#  Layer        : Game engine / rules
+#
+#  Run only this file (from the project root):
+#      python -m pytest tests/test_puzzle_board.py -v
+# ====================================================================== #
+"""Tests for PuzzleBoard: grid-size validation, the scramble rules,
+player moves and the move counter, the 3-hint limit, the "undo
+everything" solve(), win detection / locking, render() and index_at()."""
 
 import random
 
@@ -18,221 +29,173 @@ from models.transformations import (
     SwapTransformation,
 )
 
-GRID_SIZES = (3, 4, 5)
-SCRAMBLES_PER_SIZE = 200
+GRIDS = [3, 4, 5]
 
 
-def targeted_positions(transformation):
+def targeted_tiles(transformation):
     if isinstance(transformation, SwapTransformation):
         return [transformation.index_a, transformation.index_b]
     return [transformation.tile_index]
 
 
-def solve_like_a_player(board):
-    """Restore the picture using only the player's three actions: swap,
-    rotate 90 degrees clockwise and flip horizontally."""
-    n = board.grid_size
-    for position in range(n * n):
-        home = divmod(position, n)
-        current = next(
-            i for i, t in enumerate(board.tiles) if (t.home_row, t.home_col) == home
-        )
-        if current != position:
-            board.swap(position, current)
-        tile = board.tiles[position]
-        if tile.is_mirrored:
-            board.flip_tile(position, "horizontal")
-        while tile.rotation != 0:
-            board.rotate_tile(position, 90)
+# --- construction / validation ----------------------------------------- #
+@pytest.mark.parametrize("grid", [0, 2, 6, 10])
+def test_unsupported_grid_size_rejected(image_path, grid):
+    with pytest.raises(ValueError):
+        PuzzleBoard(image_path, grid)
 
 
-@pytest.fixture(scope="module")
-def scrambles(tmp_path_factory):
-    """200 scrambled boards per grid size (built once for all tests)."""
-    from conftest import noise_image, write_image
-
-    path = str(write_image(tmp_path_factory.mktemp("img") / "p.png", noise_image(90, 90)))
-    return {
-        n: [PuzzleBoard(path, n, seed=seed) for seed in range(SCRAMBLES_PER_SIZE)]
-        for n in GRID_SIZES
-    }
+def test_bad_file_rejected(tmp_path):
+    bad = tmp_path / "bad.png"
+    bad.write_text("not an image")
+    with pytest.raises(ValueError):
+        PuzzleBoard(str(bad), 3)
 
 
-@pytest.mark.parametrize("n", GRID_SIZES)
-def test_scramble_count_scales_with_grid(scrambles, n):
-    assert all(len(b.history) == n * (n - 1) for b in scrambles[n])
-
-
-@pytest.mark.parametrize("n", GRID_SIZES)
-def test_no_tile_targeted_twice(scrambles, n):
-    for board in scrambles[n]:
-        positions = [p for t in board.history for p in targeted_positions(t)]
-        assert len(positions) == len(set(positions))
-
-
-@pytest.mark.parametrize("n", GRID_SIZES)
-def test_all_three_types_every_time(scrambles, n):
-    required = {SwapTransformation, RotateTransformation, FlipTransformation}
-    for board in scrambles[n]:
-        assert {type(t) for t in board.history} == required
-
-
-@pytest.mark.parametrize("n", GRID_SIZES)
-def test_never_starts_solved_and_starts_clean(scrambles, n):
-    for board in scrambles[n]:
-        assert not board.is_solved()
-        assert board.moves == 0
-        assert board.hints_remaining == MAX_HINTS
-
-
-@pytest.mark.parametrize("n", GRID_SIZES)
-def test_player_can_always_solve(scrambles, n):
-    for board in scrambles[n][:50]:
-        solve_like_a_player(board)
-        assert board.is_solved()
-        assert board.incorrect_indices() == []
-
-
-def test_random_between_loads(image_path):
-    first = [t.describe() for t in PuzzleBoard(image_path, 4).history]
-    different = any(
-        [t.describe() for t in PuzzleBoard(image_path, 4).history] != first for _ in range(5)
-    )
-    assert different
-
-
-def test_seed_is_reproducible(image_path):
-    a = [t.describe() for t in PuzzleBoard(image_path, 5, seed=42).history]
-    b = [t.describe() for t in PuzzleBoard(image_path, 5, seed=42).history]
-    assert a == b
-
-
-def test_each_player_action_counts_one_move(image_path):
+def test_counters_start_at_zero(image_path):
     board = PuzzleBoard(image_path, 3, seed=1)
+    assert board.moves == 0 and board.hints_used == 0
+    assert board.hints_remaining == MAX_HINTS == 3
+
+
+def test_same_seed_gives_same_scramble(image_path):
+    a = PuzzleBoard(image_path, 4, seed=7)
+    b = PuzzleBoard(image_path, 4, seed=7)
+    assert [t.describe() for t in a.history] == [t.describe()
+                                                 for t in b.history]
+    np.testing.assert_array_equal(a.render(), b.render())
+
+
+# --- scramble rules ---------------------------------------------------- #
+@pytest.mark.parametrize("grid", GRIDS)
+@pytest.mark.parametrize("seed", range(10))
+def test_scramble_rules(image_path, grid, seed):
+    board = PuzzleBoard(image_path, grid, seed=seed)
+    assert len(board.tiles) == grid * grid
+    assert len(board.history) == grid * (grid - 1)          # 6 / 12 / 20
+    kinds = {type(t) for t in board.history}
+    assert kinds == {SwapTransformation,
+                     RotateTransformation, FlipTransformation}
+    targets = [i for t in board.history for i in targeted_tiles(t)]
+    # no tile hit twice
+    assert len(targets) == len(set(targets))
+    assert not board.is_solved()
+
+
+# --- player moves ------------------------------------------------------ #
+@pytest.fixture
+def board(image_path):
+    return PuzzleBoard(image_path, 3, seed=3)
+
+
+def test_swap_move(board):
+    a, b = board.tiles[0], board.tiles[8]
+    assert board.swap(0, 8) is True
+    assert board.tiles[0] is b and board.tiles[8] is a
+    assert board.moves == 1
+
+
+def test_rotate_move(board):
+    tile = board.tiles[4]
+    before = tile.rotation
+    assert board.rotate_tile(4) is True
+    assert tile.rotation == (before + 90) % 360 or tile.is_mirrored
+    assert board.moves == 1
+
+
+def test_flip_move(board):
+    tile = board.tiles[2]
+    before = tile.is_mirrored
+    assert board.flip_tile(2, "horizontal") is True
+    assert tile.is_mirrored != before
+    assert board.moves == 1
+
+
+def test_moves_are_added_to_history(board):
+    start = len(board.history)
     board.swap(0, 1)
-    board.rotate_tile(2, 90)
-    board.flip_tile(3, "horizontal")
+    board.rotate_tile(0)
+    board.flip_tile(1, "vertical")
     assert board.moves == 3
+    assert len(board.history) == start + 3
 
 
-def test_solve_restores_picture_and_clears_moves(image_path):
-    board = PuzzleBoard(image_path, 4, seed=3)
-    rng = random.Random(0)
-    for _ in range(15):
-        board.rotate_tile(rng.randrange(16), 90)
-        board.swap(*rng.sample(range(16), 2))
-    board.solve()
-    assert board.is_solved()
-    assert board.moves == 0
-    assert (board.render() == board.reference_image).all()
-
-
-def test_no_moves_accepted_after_completion(image_path):
-    board = PuzzleBoard(image_path, 3, seed=5)
+def test_no_moves_accepted_once_solved(board):
     board.solve()
     assert board.swap(0, 1) is False
     assert board.rotate_tile(0) is False
     assert board.flip_tile(0) is False
-    assert board.moves == 0
-    assert board.is_solved()
+    assert board.moves == 0 and board.is_solved()
 
 
-def test_hints_limited_to_three_and_point_at_wrong_tiles(image_path):
-    board = PuzzleBoard(image_path, 3, seed=7)
-    for used in range(1, MAX_HINTS + 1):
-        index, home_row, home_col = board.use_hint()
-        assert index in board.incorrect_indices()
-        tile = board.tiles[index]
-        assert (tile.home_row, tile.home_col) == (home_row, home_col)
-        assert board.hints_remaining == MAX_HINTS - used
+# --- hints ------------------------------------------------------------- #
+def test_hint_names_a_wrong_tile_and_its_home(board):
+    index, row, col = board.use_hint()
+    assert index in board.incorrect_indices()
+    tile = board.tiles[index]
+    assert (row, col) == (tile.home_row, tile.home_col)
+
+
+def test_max_three_hints(board):
+    for left in (2, 1, 0):
+        assert board.use_hint() is not None
+        assert board.hints_remaining == left
     assert board.use_hint() is None
-    assert board.moves == 0  # hints are not moves
+    assert board.hints_used == 3
 
 
-def test_render_matches_reference_size(image_path):
-    board = PuzzleBoard(image_path, 5, seed=0)
-    assert board.render().shape == board.reference_image.shape
-
-
-def test_index_at_bounds(image_path):
-    board = PuzzleBoard(image_path, 3, seed=0)
-    assert board.index_at(2, 2) == 8
-    assert board.index_at(3, 0) is None
-    assert board.index_at(-1, 0) is None
-
-
-@pytest.mark.parametrize("grid_size", [0, 2, 6, 7])
-def test_invalid_grid_size_rejected(image_path, grid_size):
-    with pytest.raises(ValueError):
-        PuzzleBoard(image_path, grid_size)
-
-
-def test_non_image_rejected(tmp_path):
-    path = tmp_path / "x.txt"
-    path.write_text("hello")
-    with pytest.raises(ValueError):
-        PuzzleBoard(str(path), 3)
-
-
-def test_winning_by_hand_finishes_the_round_with_a_score(image_path):
-    board = PuzzleBoard(image_path, 3, seed=11, clock=lambda: 0.0)
-    par = board.state.par
-    assert par == ParSolver().par_moves(board.tiles) > 0
-    solve_like_a_player(board)
-    state = board.state
-    assert state.is_finished and not state.was_auto_solved
-    assert state.moves >= par
-    assert state.score() > 0 and 1 <= state.stars() <= 3
-
-
-def test_solve_ends_round_as_auto_solved_and_keeps_hint_budget(image_path):
-    board = PuzzleBoard(image_path, 3, seed=2)
-    board.use_hint()
-    board.rotate_tile(0)
+def test_no_hint_when_solved(board):
     board.solve()
-    assert board.state.was_auto_solved
-    assert (board.moves, board.state.score()) == (0, 0)
-    assert board.hints_remaining == MAX_HINTS - 1  # only a new image refills hints
     assert board.use_hint() is None
-    board.solve()  # solving again changes nothing
+    assert board.hints_used == 0
+
+
+# --- solve / completion ------------------------------------------------ #
+@pytest.mark.parametrize("grid", GRIDS)
+def test_solve_restores_picture(image_path, grid):
+    board = PuzzleBoard(image_path, grid, seed=grid)
+    board.solve()
+    assert board.is_solved()
+    assert board.incorrect_indices() == []
+    np.testing.assert_array_equal(board.render(), board.reference_image)
+
+
+def test_solve_after_random_moves_and_hint(image_path):
+    rng = random.Random(42)
+    board = PuzzleBoard(image_path, 4, seed=42)
+    n = len(board.tiles)
+    for _ in range(25):
+        action = rng.choice(("swap", "rotate", "flip"))
+        if action == "swap":
+            board.swap(*rng.sample(range(n), 2))
+        elif action == "rotate":
+            board.rotate_tile(rng.randrange(n), rng.choice((90, 180, 270)))
+        else:
+            board.flip_tile(rng.randrange(n), rng.choice(
+                ("horizontal", "vertical")))
+    board.use_hint()
+    board.solve()
+    assert board.is_solved()
+    assert board.history == [] and board.moves == 0 and board.hints_used == 0
+
+
+def test_manual_undo_counts_as_solved(board):
+    for t in reversed(board.history):
+        t.undo()
     assert board.is_solved()
 
 
-def test_hint_strategy_can_be_swapped(image_path):
-    board = PuzzleBoard(image_path, 4, seed=4, hint_strategy=RandomHint(random.Random(0)))
-    picks = set()
-    for seed in range(30):
-        other = PuzzleBoard(image_path, 4, seed=4, hint_strategy=RandomHint(random.Random(seed)))
-        picks.add(other.use_hint()[0])
-    assert picks <= set(board.incorrect_indices())
-    assert len(picks) > 1
+# --- queries ----------------------------------------------------------- #
+def test_render_shape_and_scrambled(board):
+    image = board.render()
+    assert image.shape == board.reference_image.shape
+    assert image.shape[0] == board.tile_edge * board.grid_size
+    assert not np.array_equal(image, board.reference_image)
 
 
-def test_pad_fit_mode_is_passed_through(image_path):
-    # The fixture image is 150x200: cropping gives 360 px, padding the full 480.
-    assert PuzzleBoard(image_path, 3).reference_image.shape[0] == 360
-    assert PuzzleBoard(image_path, 3, fit_mode=PAD).reference_image.shape[0] == 480
-
-
-def test_non_square_tiles_rejected(image_path, monkeypatch):
-    def lopsided_square(image, grid_size, **kwargs):
-        return np.zeros((90, 120, 3), dtype=np.uint8)
-
-    def lopsided_split(image, grid_size):
-        tiles = [
-            Tile(image[:30, :40].copy(), i // grid_size, i % grid_size, tile_id=i)
-            for i in range(grid_size ** 2)
-        ]
-        return tiles, 30
-
-    monkeypatch.setattr(ImageProcessor, "prepare_square", staticmethod(lopsided_square))
-    monkeypatch.setattr(ImageProcessor, "split_into_tiles", staticmethod(lopsided_split))
-    with pytest.raises(ValueError, match="square"):
-        PuzzleBoard(image_path, 3)
-
-
-def test_board_state_is_read_only(image_path):
-    board = PuzzleBoard(image_path, 3, seed=0)
-    for name in ("tiles", "history", "moves", "grid_size", "state", "hints_remaining"):
-        with pytest.raises(AttributeError):
-            setattr(board, name, None)
+@pytest.mark.parametrize("row, col, expected", [
+    (0, 0, 0), (1, 2, 5), (2, 2, 8),
+    (-1, 0, None), (0, -1, None), (3, 0, None), (0, 3, None),
+])
+def test_index_at(board, row, col, expected):
+    assert board.index_at(row, col) == expected

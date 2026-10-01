@@ -1,52 +1,59 @@
+# ====================================================================== #
+#  File         : src/models/transformations.py
+#  Project      : ImageUnraveling - HIT137 Assignment 3
+#
+#  Student name : Hemanta Adhikari
+#  Student ID   : S403355
+#  Layer        : Core OOP models
+#  Unit tests   : tests/test_transformations.py
+# ====================================================================== #
 """
-transformations.py
+transformations.py - the puzzle's three move types: swap, rotate, flip.
 
-Implements the puzzle's three transformation types (swap / rotate / flip)
-as a small class hierarchy, following the "command" pattern: every
-transformation knows how to apply() itself to a PuzzleBoard and how to
-undo() itself again, exactly reversing that effect.
+Each move is a small object following the "command" pattern: it knows
+how to apply() itself to a PuzzleBoard and how to undo() itself again,
+exactly reversing that effect.
 
-OOP concepts demonstrated here
--------------------------------
-Inheritance:
-    Transformation (abstract base)
-        -> TileTransformation (abstract - acts on one tile)
-            -> RotateTransformation
-            -> FlipTransformation
-        -> SwapTransformation (acts on two tiles directly)
+OOP concepts demonstrated
+-------------------------
+Inheritance
+    Transformation                 (abstract base)
+     ├── TileTransformation        (abstract - acts on one tile)
+     │    ├── RotateTransformation
+     │    └── FlipTransformation
+     └── SwapTransformation        (acts on two tiles)
 
-Polymorphism:
-    PuzzleBoard.solve() and the scrambler both keep a plain list of
-    Transformation objects and call .apply() / .undo() on each one without
-    ever checking *which* concrete subclass it is. The right behaviour
-    happens automatically because each subclass overrides apply()/undo().
+Polymorphism
+    PuzzleBoard.solve() and the scrambler keep one plain list of
+    Transformation objects and call .apply() / .undo() on each, never
+    checking *which* subclass it is. The right behaviour happens
+    automatically because every subclass overrides apply() / undo().
 """
+
+from __future__ import annotations
 
 import random
 from abc import ABC, abstractmethod
-from typing import Protocol
+from typing import TYPE_CHECKING
 
-from models.tile import Tile
+if TYPE_CHECKING:  # only for type hints - avoids a circular import
+    from engine.puzzle_board import PuzzleBoard
+    from models.tile import Tile
 
-HORIZONTAL = "horizontal"
-VERTICAL = "vertical"
-
-
-class TileGrid(Protocol):
-    """Anything that holds the puzzle's tiles as a flat, row-major list
-    (in practice a PuzzleBoard). It is all a transformation needs."""
-
-    @property
-    def tiles(self) -> list[Tile]:
-        """The tiles in their current grid order."""
+# --- Transformation kinds used by the scrambler ------------------------ #
+SWAP = "swap"
+ROTATE = "rotate"
+FLIP = "flip"
 
 
+# ====================================================================== #
+# Abstract base classes
+# ====================================================================== #
 class Transformation(ABC):
     """Base class for anything that can be applied to, and later undone
     from, a PuzzleBoard."""
 
-    def __init__(self, board: TileGrid) -> None:
-        """`board` is the grid whose tiles this transformation acts on."""
+    def __init__(self, board: PuzzleBoard):
         self.board = board
 
     @abstractmethod
@@ -61,38 +68,33 @@ class Transformation(ABC):
     def describe(self) -> str:
         """Short, human-readable description (handy for debugging)."""
 
-    @abstractmethod
-    def to_record(self) -> dict[str, object]:
-        """Plain-data description of this transformation: its "kind"
-        ("swap", "rotate" or "flip") plus the positions and parameters it
-        uses. Lets other code log or compare moves without holding on to
-        the transformation object itself."""
-
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__}: {self.describe()}>"
 
 
 class TileTransformation(Transformation):
-    """A transformation that acts on a single tile, identified by that
-    tile's current index/position in the board's tile list."""
+    """A transformation acting on a single tile, identified by the tile's
+    current position (index) in the board's tile list."""
 
-    def __init__(self, board: TileGrid, tile_index: int) -> None:
-        """`tile_index` is the grid position of the tile to act on."""
+    def __init__(self, board: PuzzleBoard, tile_index: int):
         super().__init__(board)
         self.tile_index = tile_index
 
     @property
     def tile(self) -> Tile:
-        """The tile currently sitting at this transformation's position."""
+        """The tile currently at `tile_index` on the board."""
         return self.board.tiles[self.tile_index]
 
 
+# ====================================================================== #
+# Concrete transformations
+# ====================================================================== #
 class RotateTransformation(TileTransformation):
-    """Rotates one tile clockwise by a multiple of 90 degrees."""
+    """Rotates one tile clockwise by 90, 180 or 270 degrees."""
 
     VALID_DEGREES = (90, 180, 270)
 
-    def __init__(self, board: TileGrid, tile_index: int, degrees: int = 90) -> None:
+    def __init__(self, board: PuzzleBoard, tile_index: int, degrees: int = 90):
         """Raises ValueError unless `degrees` is 90, 180 or 270."""
         super().__init__(board, tile_index)
         if degrees not in self.VALID_DEGREES:
@@ -100,15 +102,12 @@ class RotateTransformation(TileTransformation):
         self.degrees = degrees
 
     def apply(self) -> None:
-        """Rotate the tile clockwise by this transformation's degrees."""
         self.tile.rotate(self.degrees)
 
     def undo(self) -> None:
-        """Rotate the tile back anticlockwise by the same amount."""
-        self.tile.rotate(-self.degrees)
+        self.tile.rotate(-self.degrees)   # turn back the same amount
 
     def describe(self) -> str:
-        """E.g. "rotate tile 7 by 180 degrees"."""
         return f"rotate tile {self.tile_index} by {self.degrees} degrees"
 
     def to_record(self) -> dict[str, object]:
@@ -117,31 +116,30 @@ class RotateTransformation(TileTransformation):
 
 
 class FlipTransformation(TileTransformation):
-    """Flips one tile horizontally or vertically. A flip is its own
-    inverse, so undo() simply performs the same flip a second time."""
+    """Flips one tile horizontally or vertically.
 
-    VALID_AXES = (HORIZONTAL, VERTICAL)
+    A flip is its own inverse, so undo() simply flips again.
+    """
 
-    def __init__(self, board: TileGrid, tile_index: int, axis: str = HORIZONTAL) -> None:
-        """Raises ValueError unless `axis` is "horizontal" or "vertical"."""
+    VALID_AXES = ("horizontal", "vertical")
+
+    def __init__(self, board: PuzzleBoard, tile_index: int, axis: str = "horizontal"):
+        """Raises ValueError unless `axis` is 'horizontal' or 'vertical'."""
         super().__init__(board, tile_index)
         if axis not in self.VALID_AXES:
             raise ValueError("axis must be 'horizontal' or 'vertical'")
         self.axis = axis
 
     def apply(self) -> None:
-        """Flip the tile along this transformation's axis."""
-        if self.axis == HORIZONTAL:
+        if self.axis == "horizontal":
             self.tile.flip_horizontal()
         else:
             self.tile.flip_vertical()
 
     def undo(self) -> None:
-        """Flip again - flipping twice restores the original state."""
-        self.apply()
+        self.apply()   # flipping twice restores the original state
 
     def describe(self) -> str:
-        """E.g. "flip tile 3 horizontally"."""
         return f"flip tile {self.tile_index} {self.axis}ly"
 
     def to_record(self) -> dict[str, object]:
@@ -150,10 +148,13 @@ class FlipTransformation(TileTransformation):
 
 
 class SwapTransformation(Transformation):
-    """Exchanges the grid position of two tiles. Also its own inverse."""
+    """Exchanges the grid positions of two tiles.
 
-    def __init__(self, board: TileGrid, index_a: int, index_b: int) -> None:
-        """Raises ValueError if both positions are the same."""
+    A swap is its own inverse, so undo() simply swaps again.
+    """
+
+    def __init__(self, board: PuzzleBoard, index_a: int, index_b: int):
+        """Raises ValueError if both indices are the same tile."""
         super().__init__(board)
         if index_a == index_b:
             raise ValueError("a tile cannot be swapped with itself")
@@ -161,19 +162,14 @@ class SwapTransformation(Transformation):
         self.index_b = index_b
 
     def apply(self) -> None:
-        """Exchange the two tiles' positions in the board's tile list."""
         tiles = self.board.tiles
-        tiles[self.index_a], tiles[self.index_b] = (
-            tiles[self.index_b],
-            tiles[self.index_a],
-        )
+        a, b = self.index_a, self.index_b
+        tiles[a], tiles[b] = tiles[b], tiles[a]
 
     def undo(self) -> None:
-        """Swap again - swapping twice restores the original arrangement."""
-        self.apply()
+        self.apply()   # swapping twice restores the original arrangement
 
     def describe(self) -> str:
-        """E.g. "swap tiles 0 and 5"."""
         return f"swap tiles {self.index_a} and {self.index_b}"
 
     def to_record(self) -> dict[str, object]:
@@ -181,34 +177,34 @@ class SwapTransformation(Transformation):
         return {"kind": "swap", "index_a": self.index_a, "index_b": self.index_b}
 
 
-def random_transformation(
-    board: TileGrid, kind: str, pool: list[int], rng: random.Random | None = None
-) -> Transformation:
-    """Factory function: builds one transformation of the given `kind`
-    ("swap", "rotate" or "flip") with random parameters, used while
-    scrambling a freshly loaded image.
+# ====================================================================== #
+# Factory
+# ====================================================================== #
+def random_transformation(board: PuzzleBoard, kind: str, pool: list[int],
+                          rng=random) -> Transformation:
+    """Build one transformation of the given `kind` ("swap", "rotate" or
+    "flip") with random parameters - used when scrambling a new image.
 
     The tile positions it acts on are popped from `pool` (a shuffled list
     of still-untouched positions), so across a whole scramble no tile is
-    ever targeted by more than one transformation. `rng` supplies the
-    random degrees/axis (a fresh random.Random if omitted).
+    ever targeted more than once.
 
-    This is the "class interaction" piece that ties the transformation
-    hierarchy to PuzzleBoard without PuzzleBoard needing to know anything
-    about how each transformation type works internally.
+    This is the "class interaction" piece: PuzzleBoard asks for a move by
+    name and never needs to know how each transformation works inside.
 
-    Raises ValueError for an unknown `kind`.
+    Raises
+    ------
+    ValueError
+        If `kind` is not one of "swap", "rotate" or "flip".
     """
-    rng = rng or random.Random()
-
-    if kind == "swap":
+    if kind == SWAP:
         return SwapTransformation(board, pool.pop(), pool.pop())
 
-    if kind == "rotate":
+    if kind == ROTATE:
         degrees = rng.choice(RotateTransformation.VALID_DEGREES)
         return RotateTransformation(board, pool.pop(), degrees)
 
-    if kind == "flip":
+    if kind == FLIP:
         axis = rng.choice(FlipTransformation.VALID_AXES)
         return FlipTransformation(board, pool.pop(), axis)
 

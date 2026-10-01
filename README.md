@@ -5,8 +5,16 @@ processing), structured into a layered architecture. A loaded image is
 cut into a grid of tiles, scrambled with random swaps/rotations/flips,
 and the player restores it by clicking tiles.
 
-See **`docs/PRD_Implementation_Plan.md`** for the full requirements and
-**`progress.md`** for what is implemented and what is still to do.
+See **`docs/PRD_Implementation_Plan.md`** for the full requirements.
+
+## Group members
+
+| Student name     | Student ID | Owns (source files)                                   | Unit tests                                            |
+| ---------------- | ---------- | ----------------------------------------------------- | ----------------------------------------------------- |
+| Hemanta Adhikari | S403355    | `src/models/tile.py`, `src/models/transformations.py` | `tests/test_tile.py`, `tests/test_transformations.py` |
+| John Karki       | S403518    | `src/engine/image_processor.py`                       | `tests/test_image_processor.py`                       |
+| Ashim Koirala    | S407089    | `src/engine/puzzle_board.py`                          | `tests/test_puzzle_board.py`                          |
+| Rupesh Ghimire   | S000000    | `src/ui/gui.py`, `src/main.py`                        | `tests/test_gui.py`                                   |
 
 ## Setup
 
@@ -52,10 +60,7 @@ starts at 100 points per tile and loses points for every move beyond par
 ```
 HIT137_III_ImageUnraveling/
 ├── README.md
-├── progress.md            <- PRD requirements: done / not done yet
-├── requirements.txt       <- runtime dependencies
-├── requirements-dev.txt   <- + pytest and ruff for development
-├── pyproject.toml         <- ruff (lint) and pytest settings
+├── requirements.txt       <- game libraries + pytest and ruff
 ├── github_link.txt
 ├── docs/                  <- brief, marking rubric, PRD
 ├── outputs/               <- sample original/scrambled images
@@ -81,20 +86,140 @@ HIT137_III_ImageUnraveling/
 │       ├── panels.py           <- ImagePanel: Reference / Interactive
 │       └── hit_test.py         <- mouse position -> grid cell
 └── tests/                 <- pytest suite, no image files needed
+    ├── conftest.py              <- shared fixtures (whole group)
+    ├── test_tile.py             <- Hemanta Adhikari
+    ├── test_transformations.py  <- Hemanta Adhikari
+    ├── test_image_processor.py  <- John Karki
+    ├── test_puzzle_board.py     <- Ashim Koirala
+    └── test_gui.py              <- Rupesh Ghimire
 ```
 
-## Testing and checks
+## Sound
+
+The game has background music and sound effects (pygame). Music starts
+when an image is loaded; every select, swap, rotate, flip and hint has its
+own effect, a move that puts a tile in the right place plays a "ding",
+a move that makes the picture worse plays a mistake buzz, loading a bad
+file plays an error sound, and finishing the puzzle plays a winner fanfare.
+Press **M** to mute/unmute. All sound files are in `assets/sounds/`; the
+code is in `src/audio/` and `gui.py` is unchanged. If pygame or an audio
+device is missing the game simply runs silently.
+
+## Unit testing
+
+Every source file has its own unit-test file in `tests/`, written by the
+group member who owns that part of the code. The header at the top of
+each test file gives the student's name and student ID.
+
+| Test file                       | Tests source file                | Student name     | Student ID | Tests |
+| ------------------------------- | -------------------------------- | ---------------- | ---------- | ----- |
+| `tests/test_tile.py`            | `src/models/tile.py`             | Hemanta Adhikari | S403355    | 27    |
+| `tests/test_transformations.py` | `src/models/transformations.py`  | Hemanta Adhikari | S403355    | 23    |
+| `tests/test_image_processor.py` | `src/engine/image_processor.py`  | John Karki       | S403518    | 39    |
+| `tests/test_puzzle_board.py`    | `src/engine/puzzle_board.py`     | Ashim Koirala    | S407089    | 58    |
+| `tests/test_gui.py`             | `src/ui/gui.py`, `src/main.py`   | Rupesh Ghimire   | S000000    | 19    |
+| `tests/conftest.py`             | shared fixtures, not a test file | Whole group      | -          | -     |
+
+The tests use **pytest**. They generate their own small test images in a
+temporary folder, so no picture files are needed. `tests/conftest.py`
+adds `src/` to the import path, so the commands below work straight from
+the project root.
+
+### 1. Install the requirements (once)
+
+From the project root (the folder containing `src/` and `tests/`):
 
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest              # all tests (GUI tests skip if there is no display)
-ruff check src tests scripts  # lint: PEP 8, unused names, import order
-python scripts/check_imports.py
+pip install -r requirements.txt
 ```
 
-The same three checks run on GitHub Actions for every push to `main` and
-every pull request (`.github/workflows/ci.yml`); there the GUI tests run
-under a virtual display (`xvfb-run`).
+This installs the game's libraries plus `pytest` and `ruff`.
+
+### 2. Run all unit tests
+
+```bash
+python -m pytest -v
+```
+
+Every test is listed with `PASSED`, ending with `166 passed`.
+
+### 3. Run one student's tests
+
+```bash
+python -m pytest tests/test_tile.py -v               # Hemanta Adhikari - 27 tests
+python -m pytest tests/test_transformations.py -v    # Hemanta Adhikari - 23 tests
+python -m pytest tests/test_image_processor.py -v    # John Karki       - 39 tests
+python -m pytest tests/test_puzzle_board.py -v       # Ashim Koirala    - 58 tests
+python -m pytest tests/test_gui.py -v                # Rupesh Ghimire   - 19 tests
+```
+
+Run a single test by name with `-k`, e.g.
+`python -m pytest tests/test_puzzle_board.py -k hint -v`.
+
+Example output (`python -m pytest tests/test_tile.py -v`):
+
+```
+collected 27 items
+
+tests/test_tile.py::test_constructor_sets_home_and_default_orientation PASSED [  3%]
+tests/test_tile.py::test_constructor_rejects_empty_image[None] PASSED    [  7%]
+...
+tests/test_tile.py::test_repr_shows_state PASSED                         [100%]
+
+============================== 27 passed in 0.10s ==============================
+```
+
+### 4. GUI tests need a display
+
+`test_gui.py` opens a hidden Tkinter window, records message boxes
+instead of showing them, and simulates mouse clicks. It works on any
+normal Windows/macOS/Linux desktop. On a machine with no screen those
+tests are **skipped**, not failed (e.g. `148 passed, 18 skipped`). On a
+headless Linux machine run them with `xvfb-run -a python -m pytest -v`.
+
+### Troubleshooting
+
+- `ModuleNotFoundError: No module named 'models'` - your
+  `tests/conftest.py` is an old copy without the `sys.path` lines. Update
+  it, or run `PYTHONPATH=src python -m pytest -v`.
+- `file or directory not found` - check the file name (e.g. one `.py`,
+  not `.py.py`) and that you are in the project root.
+
+### What each test file checks
+
+- **test_tile.py** (Hemanta Adhikari) - constructor checks, read-only
+  (encapsulated) state, rotation wrap-around and 90° validation, flips
+  mirror the tile as displayed, reset, original pixels never change,
+  every orientation can be fixed with the player's two actions,
+  `is_correct`.
+- **test_transformations.py** (Hemanta Adhikari) - abstract classes
+  can't be created, inheritance tree, `apply()`/`undo()` for
+  rotate/flip/swap, invalid input rejected, polymorphic undo of a mixed
+  history, `random_transformation` factory.
+- **test_image_processor.py** (John Karki) - loading PNG/JPG/BMP,
+  grayscale, transparent and 16-bit images, non-English file names, clear
+  `ValueError` for bad/empty/missing files, square output divisible by
+  3/4/5, split into row-major tiles, merge rebuilds the exact picture.
+- **test_puzzle_board.py** (Ashim Koirala) - supported grid sizes,
+  reproducible seeded scramble, scramble rules (6/12/20 steps, all three
+  types, no tile hit twice, never starts solved), moves and move counter,
+  moves refused once solved, max 3 hints, `solve()`, `render()`,
+  `index_at()`.
+- **test_gui.py** (Rupesh Ghimire) - button states, loading every grid
+  size, bad-file error box, select/deselect/swap, right-click rotate,
+  shift-click flip, off-image clicks ignored, hints on both images, solve
+  and lock, winning with mouse actions only, `main()` start-up.
+
+### Other checks
+
+```bash
+ruff check src tests scripts      # lint: PEP 8, unused names, import order
+python scripts/check_imports.py   # every module under src/ imports cleanly
+```
+
+These checks and the tests also run on GitHub Actions for every push to
+`main` and every pull request (`.github/workflows/ci.yml`); there the GUI
+tests run under a virtual display (`xvfb-run`).
 
 ## How the OOP requirements are met
 
@@ -151,7 +276,7 @@ transformations (moves), `GameState` (counters, timer, score) and
 - The scramble draws its tiles from one shuffled pool, so no tile is
   targeted by more than one transformation, and it always contains at
   least one swap, rotate and flip.
-- `Solve` pops every transformation ever applied (scramble *and* player
+- `Solve` pops every transformation ever applied (scramble _and_ player
   moves) off a history stack and calls `.undo()` on each, in reverse
   order - a literal "undo everything", exactly as the brief describes.
 - All file/image errors (cancelled dialog, missing, non-image, corrupt or
@@ -166,8 +291,9 @@ transformations (moves), `GameState` (counters, timer, score) and
 
 1. Make sure every team member understands their section (and ideally
    the whole app) - you may be asked about any part of it.
-2. Create a **public** GitHub repository and add all group members.
-3. Push this code and keep committing there as you go.
-4. Put the repository URL in `github_link.txt`.
+2. Check the repository is **public** and all group members are added.
+3. Replace every `S000000` in this README and in the test file headers
+   with the real student IDs.
+4. Check the repository URL in `github_link.txt`.
 5. Zip the programming files, the `outputs/` folder and `github_link.txt`
    together and upload to Learnline.
