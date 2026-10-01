@@ -14,7 +14,7 @@ See **`docs/PRD_Implementation_Plan.md`** for the full requirements.
 | Hemanta Adhikari | S403355    | `src/models/tile.py`, `src/models/transformations.py` | `tests/test_tile.py`, `tests/test_transformations.py` |
 | John Karki       | S403518    | `src/engine/image_processor.py`                       | `tests/test_image_processor.py`                       |
 | Ashim Koirala    | S407089    | `src/engine/puzzle_board.py`                          | `tests/test_puzzle_board.py`                          |
-| Rupesh Ghimire   | S000000    | `src/ui/gui.py`, `src/main.py`                        | `tests/test_gui.py`                                   |
+| Rupesh Ghimire   | S403354    | `src/ui/gui.py`, `src/main.py`                        | `tests/test_gui.py`                                   |
 
 ## Setup
 
