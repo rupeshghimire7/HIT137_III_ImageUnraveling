@@ -12,7 +12,7 @@ See **`docs/PRD_Implementation_Plan.md`** for the full requirements.
 | Student name     | Student ID | Owns (source files)                                   | Unit tests                                          |
 | ---------------- | ---------- | ----------------------------------------------------- | --------------------------------------------------- |
 | Hemanta Adhikari | S403355    | `src/models/tile.py`, `src/models/transformations.py` | `tests/test_tile.py`, `tests/test_transformations.py` |
-| John Karki       | S000000    | `src/engine/image_processor.py`                       | `tests/test_image_processor.py`                     |
+| John Karki       | S403518    | `src/engine/image_processor.py`                       | `tests/test_image_processor.py`                     |
 | Ashim Koirala    | S000000    | `src/engine/puzzle_board.py`                          | `tests/test_puzzle_board.py`                        |
 | Rupesh Ghimire   | S000000    | `src/ui/gui.py`, `src/main.py`                        | `tests/test_gui.py`                                 |
 
@@ -98,7 +98,7 @@ each test file gives the student's name and student ID.
 | ------------------------------- | ------------------------------- | ---------------- | ---------- | ----- |
 | `tests/test_tile.py`            | `src/models/tile.py`            | Hemanta Adhikari | S403355    | 27    |
 | `tests/test_transformations.py` | `src/models/transformations.py` | Hemanta Adhikari | S403355    | 23    |
-| `tests/test_image_processor.py` | `src/engine/image_processor.py` | John Karki       | S000000    | 39    |
+| `tests/test_image_processor.py` | `src/engine/image_processor.py` | John Karki       | S403518    | 39    |
 | `tests/test_puzzle_board.py`    | `src/engine/puzzle_board.py`    | Ashim Koirala    | S000000    | 58    |
 | `tests/test_gui.py`             | `src/ui/gui.py`, `src/main.py`  | Rupesh Ghimire   | S000000    | 19    |
 | `tests/conftest.py`             | shared fixtures, not a test file | Whole group     | -          | -     |
