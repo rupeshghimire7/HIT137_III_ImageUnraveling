@@ -9,12 +9,12 @@ See **`docs/PRD_Implementation_Plan.md`** for the full requirements.
 
 ## Group members
 
-| Student name     | Student ID | Owns (source files)                                   | Unit tests                                          |
-| ---------------- | ---------- | ----------------------------------------------------- | --------------------------------------------------- |
+| Student name     | Student ID | Owns (source files)                                   | Unit tests                                            |
+| ---------------- | ---------- | ----------------------------------------------------- | ----------------------------------------------------- |
 | Hemanta Adhikari | S403355    | `src/models/tile.py`, `src/models/transformations.py` | `tests/test_tile.py`, `tests/test_transformations.py` |
-| John Karki       | S403518    | `src/engine/image_processor.py`                       | `tests/test_image_processor.py`                     |
-| Ashim Koirala    | S000000    | `src/engine/puzzle_board.py`                          | `tests/test_puzzle_board.py`                        |
-| Rupesh Ghimire   | S000000    | `src/ui/gui.py`, `src/main.py`                        | `tests/test_gui.py`                                 |
+| John Karki       | S403518    | `src/engine/image_processor.py`                       | `tests/test_image_processor.py`                       |
+| Ashim Koirala    | S407089    | `src/engine/puzzle_board.py`                          | `tests/test_puzzle_board.py`                          |
+| Rupesh Ghimire   | S403354    | `src/ui/gui.py`, `src/main.py`                        | `tests/test_gui.py`                                   |
 
 ## Setup
 
@@ -78,6 +78,7 @@ HIT137_III_ImageUnraveling/
     ├── test_puzzle_board.py     <- Ashim Koirala
     └── test_gui.py              <- Rupesh Ghimire
 ```
+
 ## Sound
 
 The game has background music and sound effects (pygame). Music starts
@@ -88,20 +89,21 @@ file plays an error sound, and finishing the puzzle plays a winner fanfare.
 Press **M** to mute/unmute. All sound files are in `assets/sounds/`; the
 code is in `src/audio/` and `gui.py` is unchanged. If pygame or an audio
 device is missing the game simply runs silently.
+
 ## Unit testing
 
 Every source file has its own unit-test file in `tests/`, written by the
 group member who owns that part of the code. The header at the top of
 each test file gives the student's name and student ID.
 
-| Test file                       | Tests source file               | Student name     | Student ID | Tests |
-| ------------------------------- | ------------------------------- | ---------------- | ---------- | ----- |
-| `tests/test_tile.py`            | `src/models/tile.py`            | Hemanta Adhikari | S403355    | 27    |
-| `tests/test_transformations.py` | `src/models/transformations.py` | Hemanta Adhikari | S403355    | 23    |
-| `tests/test_image_processor.py` | `src/engine/image_processor.py` | John Karki       | S403518    | 39    |
-| `tests/test_puzzle_board.py`    | `src/engine/puzzle_board.py`    | Ashim Koirala    | S000000    | 58    |
-| `tests/test_gui.py`             | `src/ui/gui.py`, `src/main.py`  | Rupesh Ghimire   | S000000    | 19    |
-| `tests/conftest.py`             | shared fixtures, not a test file | Whole group     | -          | -     |
+| Test file                       | Tests source file                | Student name     | Student ID | Tests |
+| ------------------------------- | -------------------------------- | ---------------- | ---------- | ----- |
+| `tests/test_tile.py`            | `src/models/tile.py`             | Hemanta Adhikari | S403355    | 27    |
+| `tests/test_transformations.py` | `src/models/transformations.py`  | Hemanta Adhikari | S403355    | 23    |
+| `tests/test_image_processor.py` | `src/engine/image_processor.py`  | John Karki       | S403518    | 39    |
+| `tests/test_puzzle_board.py`    | `src/engine/puzzle_board.py`     | Ashim Koirala    | S407089    | 58    |
+| `tests/test_gui.py`             | `src/ui/gui.py`, `src/main.py`   | Rupesh Ghimire   | S000000    | 19    |
+| `tests/conftest.py`             | shared fixtures, not a test file | Whole group      | -          | -     |
 
 The tests use **pytest**. They generate their own small test images in a
 temporary folder, so no picture files are needed. `tests/conftest.py`
@@ -248,7 +250,7 @@ in turn call `engine/image_processor.py` (for pixels) and
 - The scramble draws its tiles from one shuffled pool, so no tile is
   targeted by more than one transformation, and it always contains at
   least one swap, rotate and flip.
-- `Solve` pops every transformation ever applied (scramble *and* player
+- `Solve` pops every transformation ever applied (scramble _and_ player
   moves) off a history stack and calls `.undo()` on each, in reverse
   order - a literal "undo everything", exactly as the brief describes.
 - All file/image errors (cancelled dialog, non-image file, corrupt file)

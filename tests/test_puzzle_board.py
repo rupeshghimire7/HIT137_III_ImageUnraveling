@@ -2,7 +2,7 @@
 #  Unit tests for: src/engine/puzzle_board.py  (class PuzzleBoard)
 #
 #  Student name : Ashim Koirala
-#  Student ID   : S000000      
+#  Student ID   : S407089
 #  Layer        : Game engine / rules
 #
 #  Run only this file (from the project root):
@@ -56,7 +56,12 @@ def test_counters_start_at_zero(image_path):
 def test_same_seed_gives_same_scramble(image_path):
     a = PuzzleBoard(image_path, 4, seed=7)
     b = PuzzleBoard(image_path, 4, seed=7)
+<<<<<<< HEAD
     assert [t.describe() for t in a.history] == [t.describe() for t in b.history]
+=======
+    assert [t.describe() for t in a.history] == [t.describe()
+                                                 for t in b.history]
+>>>>>>> 7611af74875cdceb87473262c6d5cbd384352c49
     np.testing.assert_array_equal(a.render(), b.render())
 
 
@@ -68,9 +73,17 @@ def test_scramble_rules(image_path, grid, seed):
     assert len(board.tiles) == grid * grid
     assert len(board.history) == grid * (grid - 1)          # 6 / 12 / 20
     kinds = {type(t) for t in board.history}
+<<<<<<< HEAD
     assert kinds == {SwapTransformation, RotateTransformation, FlipTransformation}
     targets = [i for t in board.history for i in targeted_tiles(t)]
     assert len(targets) == len(set(targets))                 # no tile hit twice
+=======
+    assert kinds == {SwapTransformation,
+                     RotateTransformation, FlipTransformation}
+    targets = [i for t in board.history for i in targeted_tiles(t)]
+    # no tile hit twice
+    assert len(targets) == len(set(targets))
+>>>>>>> 7611af74875cdceb87473262c6d5cbd384352c49
     assert not board.is_solved()
 
 
@@ -163,7 +176,12 @@ def test_solve_after_random_moves_and_hint(image_path):
         elif action == "rotate":
             board.rotate_tile(rng.randrange(n), rng.choice((90, 180, 270)))
         else:
+<<<<<<< HEAD
             board.flip_tile(rng.randrange(n), rng.choice(("horizontal", "vertical")))
+=======
+            board.flip_tile(rng.randrange(n), rng.choice(
+                ("horizontal", "vertical")))
+>>>>>>> 7611af74875cdceb87473262c6d5cbd384352c49
     board.use_hint()
     board.solve()
     assert board.is_solved()
