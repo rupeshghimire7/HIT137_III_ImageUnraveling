@@ -6,17 +6,17 @@ Entry point for ImageUnraveling, the HIT137 Assignment 3 tile puzzle.
 Run with (from the project root):
     python src/main.py
 
-Requires: opencv-python, numpy, Pillow (see requirements.txt)
+Requires: opencv-python, numpy, Pillow, pygame (see requirements.txt)
 """
 
 import tkinter as tk
 
-from ui.gui import PuzzleGameApp
+from audio.sound_game import SoundPuzzleGameApp
 
 
 def main():
     root = tk.Tk()
-    PuzzleGameApp(root)
+    SoundPuzzleGameApp(root)
     root.mainloop()
 
 

@@ -2,7 +2,7 @@
 #  Unit tests for: src/engine/image_processor.py  (class ImageProcessor)
 #
 #  Student name : John Karki
-#  Student ID   : S000000        
+#  Student ID   : S403518     
 #  Layer        : Image processing (OpenCV)
 #
 #  Run only this file (from the project root):
